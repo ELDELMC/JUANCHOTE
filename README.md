@@ -1,0 +1,98 @@
+# 🤖 JUANCHOTE - WhatsApp Bot Pro 🚀
+
+¡Bienvenido a **JUANCHOTE**, el bot de WhatsApp más completo, modular y fácil de usar! Este proyecto ha sido diseñado desde cero para ser rápido, inteligente y totalmente expandible.
+
+---
+
+## 🌟 ¿Qué hace a JUANCHOTE especial?
+
+A diferencia de los bots tradicionales, **JUANCHOTE** utiliza una **Arquitectura Modular**. Esto significa que cada función vive en su propio archivo, lo que lo hace increíblemente estable y fácil de mejorar. ¡Solo añade un archivo `.js` en la carpeta `comandos/` y el bot aprenderá la nueva función automáticamente!
+
+---
+
+## 🛠️ Funcionalidades Principales
+
+### 🖼️ Sticker Factory
+*   **Comando:** `.s` o `.sticker`
+*   **Descripción:** Envía una imagen o video corto, o responde a uno, y el bot lo convertirá instantáneamente en un sticker de alta calidad.
+*   **Fix:** Especialmente optimizado para funcionar en grupos sin errores de sesión.
+
+### 🎙️ IA Audio Transcriptor (Whisper V3)
+*   **Comando:** `.transcribir` (respondiendo a una nota de voz)
+*   **Descripción:** ¿No puedes escuchar un audio? El bot usa la tecnología **Groq Whisper v3-turbo** para decirte exactamente qué dice esa nota de voz por escrito con una precisión asombrosa.
+
+### 📚 Wikipedia Fast-Search
+*   **Comando:** `.wiki [tema]`
+*   **Descripción:** Obtén un resumen rápido de cualquier tema directamente en el chat. Ideal para resolver dudas en medio de una conversación grupal.
+
+### 🧠 Inteligencia Artificial Integrada
+*   **Uso:** ¡Solo háblale!
+*   **Descripción:** El bot procesa lenguaje natural. Puedes preguntarle cosas, pedirle consejos o simplemente charlar. Además, puedes configurar su "personalidad" con el comando `.personalidad`.
+
+### 🎮 Mini-Juegos y Azar
+*   **Comandos:** 
+    *   `.dado` 🎲 : Tira un dado virtual.
+    *   `.moneda` 🪙 : Cara o cruz para decidir algo rápido.
+    *   `.suerte` 🔮 : Tu predicción del día generada aleatoriamente.
+    *   `.menu` 📜 : El panel principal que muestra todos los comandos activos.
+
+### 🛡️ Herramientas Administrativas
+*   **Comando:** `.admin [acción]`
+*   **Acciones:** `kick`, `promote`, `demote`, `mute`, `unmute`, `tagall`.
+*   **Seguridad:** Solo los dueños o administradores configurados en el `.env` pueden usar estas potentes herramientas.
+
+---
+
+## 🚀 Instalación y Configuración
+
+### 1️⃣ Requisitos Previos
+*   [Node.js](https://nodejs.org/) (Versión 16 o superior)
+*   Una API Key de [Groq](https://console.groq.com/) (Gratis para empezar)
+
+### 2️⃣ Clonar e Instalar
+```bash
+git clone https://github.com/ELDELMC/JUANCHOTE.git
+cd JUANCHOTE
+npm install
+```
+
+### 3️⃣ Configurar Variables de Entorno
+Crea un archivo `.env` en la raíz del proyecto con la siguiente estructura:
+```env
+GROQ_API_KEY=tu_api_key_aqui
+OWNERS=tu_numero_aqui
+ADMINS=numero1,numero2
+```
+
+### 4️⃣ Iniciar el Bot
+```bash
+npm start
+```
+
+---
+
+## 🧩 Cómo añadir tus propios comandos (Sistema Modular)
+
+¡Es súper sencillo! Solo crea un archivo en `comandos/nombre_del_comando.js`:
+
+```javascript
+module.exports = {
+  command: ['mi_comando', 'alias1'],
+  handler: async ({ sock, from, text }) => {
+    await sock.sendMessage(from, { text: '¡Hola! Este es un nuevo comando modular.' });
+  }
+};
+```
+¡Y listo! Al reiniciar el bot, el comando estará activo.
+
+---
+
+## 🤝 Créditos y Contribuciones
+
+Desarrollado con ❤️ por **@ELDELMC**. 
+
+Si quieres contribuir, haz un fork del repo y envía tu Pull Request. ¡Toda ayuda es bienvenida para hacer de JUANCHOTE el mejor bot de la comunidad!
+
+---
+
+*¡Hecho con [Baileys](https://github.com/WhiskeySockets/Baileys) y mucho café!* ☕✨

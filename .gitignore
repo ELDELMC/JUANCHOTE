@@ -1,0 +1,19 @@
+# Dependencias
+node_modules/
+
+# Sesión de WhatsApp (MUY IMPORTANTE)
+auth/
+
+# Variables de entorno
+.env
+
+# Logs
+*.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+data/
+bot.zip
+
