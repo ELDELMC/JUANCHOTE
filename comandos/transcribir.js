@@ -1,9 +1,5 @@
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const axios = require('axios');
-const FormData = require('form-data');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { transcribeAudio } = require('../utils/audio');
 
 module.exports = {
   command: ['transcribir', 'audio'],
@@ -24,28 +20,7 @@ module.exports = {
         { logger: console, reuploadRequest: sock.updateMediaMessage }
       );
 
-      // Groq Whisper requiere un archivo. Usaremos la carpeta temporal del SO.
-      const tempFilePath = path.join(os.tmpdir(), `audio_${Date.now()}.ogg`);
-      fs.writeFileSync(tempFilePath, buffer);
-
-      const form = new FormData();
-      form.append('file', fs.createReadStream(tempFilePath));
-      form.append('model', 'whisper-large-v3-turbo');
-      form.append('response_format', 'text');
-
-      const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', form, {
-        headers: {
-          ...form.getHeaders(),
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
-        }
-      });
-
-      fs.unlinkSync(tempFilePath); // Limpiar
-
-      const transcription = response.data;
-      if (!transcription) {
-        throw new Error("La API no devolvió transcripción válida");
-      }
+      const transcription = await transcribeAudio(buffer);
 
       await sock.sendMessage(from, { text: `🎙️ *Transcripción:*\n\n"${transcription}"` }, { quoted: msg });
 

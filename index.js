@@ -12,6 +12,9 @@ const qrcode = require('qrcode-terminal');
 const { getText } = require('./utils/helpers');
 const { hasPermission } = require('./utils/permissions');
 const { askAI: handleAI } = require('./utils/ai');
+const { transcribeAudio, textToSpeech } = require('./utils/audio');
+const { getGroupSettings } = require('./utils/settings');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 const fs = require('fs');
 const path = require('path');
@@ -103,14 +106,53 @@ async function startBot() {
       // 🛑 anti loop
       if (msg.key.fromMe) return;
 
-      const text = getText(msg);
-      if (!text) return;
+      const text = getText(msg) || '';
+      let finalInputText = text;
+      let isVoice = false;
 
-      console.log(`📩 ${from} [${sender}]: ${text}`);
+      // 🎤 Interceptar y procesar audios
+      const audioMessage = msg.message?.audioMessage;
+      if (audioMessage) {
+        if (isGroup(from)) {
+          const settings = getGroupSettings(from);
+          if (!settings.audios_activados) {
+             console.log(`🔇 Audio ignorado en grupo ${from} (audios_activados: false)`);
+             return; 
+          }
+        }
+        
+        isVoice = true;
+        try {
+          const buffer = await downloadMediaMessage(
+            msg,
+            'buffer',
+            {},
+            { logger: console, reuploadRequest: sock.updateMediaMessage }
+          );
+          finalInputText = await transcribeAudio(buffer);
+          console.log(`🎙️ Audio puro transcrito de ${sender}: ${finalInputText}`);
+        } catch(e) {
+          console.error("❌ Error transcribiendo audio en flujo principal:", e);
+          return;
+        }
+      }
+
+      if (!finalInputText) return;
+
+      console.log(`📩 ${from} [${sender}]: ${finalInputText}`);
+
+      // ✅ Reaccionar automáticamente a los mensajes de los grupos
+      if (isGroup(from)) {
+        setTimeout(async () => {
+          try {
+            await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
+          } catch(err) { /* Ignorar si falla la reacción */ }
+        }, 2000); // 2 segundos después
+      }
 
       // 🎯 COMANDOS
-      if (text.startsWith('.')) {
-        const [cmd, ...args] = text.slice(1).trim().split(/\s+/);
+      if (finalInputText.startsWith('.')) {
+        const [cmd, ...args] = finalInputText.slice(1).trim().split(/\s+/);
         const command = cmd.toLowerCase();
 
         console.log(`⚡ Ejecutando comando: ${command}`);
@@ -127,7 +169,7 @@ async function startBot() {
 
           // Ejecutar comando
           try {
-            await cmdModule.handler({ sock, msg, text, args, from, sender, isGroup, command });
+            await cmdModule.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup, command });
           } catch (err) {
             console.error(`💥 ERROR en comando ${command}:`, err);
             await sock.sendMessage(from, { text: '❌ Ocurrió un error al ejecutar el comando.' });
@@ -142,13 +184,35 @@ async function startBot() {
       // 🤖 IA
       console.log('🧠 IA procesando...');
 
-      const response = await handleAI(text);
+      const response = await handleAI(finalInputText, isGroup(from));
 
-      console.log('🤖 Respuesta IA:', response);
+      if (response && response.trim().toUpperCase() === 'IGNORAR') {
+         console.log('🤫 La IA decidió IGNORAR (están hablando de otros temas en el grupo).');
+         return;
+      }
 
-      await sock.sendMessage(from, { text: response });
+      console.log('🤖 Respuesta IA lista. Voice Mode:', isVoice);
 
-      console.log('🤖 BOT envió mensaje');
+      if (isVoice) {
+         try {
+            console.log('🗣️ Generando nota de voz TTS...');
+            const audioPath = await textToSpeech(response);
+            await sock.sendMessage(from, {
+               audio: { url: audioPath },
+               mimetype: 'audio/mp4',
+               ptt: true // Enviar nativamente como Nota de Voz
+            }, { quoted: msg });
+            const fs = require('fs');
+            if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+         } catch(e) {
+            console.error("❌ Error enviando TTS, enviando texto como fallback:", e);
+            await sock.sendMessage(from, { text: response }, { quoted: msg });
+         }
+      } else {
+         await sock.sendMessage(from, { text: response }, { quoted: msg });
+      }
+
+      console.log('🤖 BOT envió respuesta');
 
     } catch (err) {
       console.error('💥 ERROR EN MENSAJE:');

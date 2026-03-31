@@ -13,6 +13,10 @@ function getPersonality() {
 }
 
 function setPersonality(newPrompt) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
   fs.writeFileSync(filePath, JSON.stringify({ prompt: newPrompt }, null, 2));
 }
 
