@@ -8,26 +8,30 @@
 
 A diferencia de los bots tradicionales, **JUANCHOTE** utiliza una **Arquitectura Modular**. Esto significa que cada función vive en su propio archivo, lo que lo hace increíblemente estable y fácil de mejorar. ¡Solo añade un archivo `.js` en la carpeta `comandos/` y el bot aprenderá la nueva función automáticamente!
 
+Además, cuenta con una **IA Selectiva** que sabe cuándo participar y cuándo guardar silencio, evitando molestias en grupos concurridos.
+
 ---
 
 ## 🛠️ Funcionalidades Principales
 
+### 🎙️ IA Audio & Voz Nativa (Whisper V3 + TTS)
+*   **Transcripción Automática:** Si envías una nota de voz, el bot la transcribirá instantáneamente por ti (si está activado en el grupo).
+*   **Respuesta por Voz:** Si le hablas por audio a la IA, ¡JUANCHOTE te responderá con una nota de voz nativa!
+*   **Tecnología:** Utiliza **Groq Whisper v3-turbo** para entenderte y **Edge TTS** para hablarte con una claridad asombrosa.
+
 ### 🖼️ Sticker Factory
 *   **Comando:** `.s` o `.sticker`
 *   **Descripción:** Envía una imagen o video corto, o responde a uno, y el bot lo convertirá instantáneamente en un sticker de alta calidad.
-*   **Fix:** Especialmente optimizado para funcionar en grupos sin errores de sesión.
-
-### 🎙️ IA Audio Transcriptor (Whisper V3)
-*   **Comando:** `.transcribir` (respondiendo a una nota de voz)
-*   **Descripción:** ¿No puedes escuchar un audio? El bot usa la tecnología **Groq Whisper v3-turbo** para decirte exactamente qué dice esa nota de voz por escrito con una precisión asombrosa.
 
 ### 📚 Wikipedia Fast-Search
 *   **Comando:** `.wiki [tema]`
 *   **Descripción:** Obtén un resumen rápido de cualquier tema directamente en el chat. Ideal para resolver dudas en medio de una conversación grupal.
 
-### 🧠 Inteligencia Artificial Integrada
-*   **Uso:** ¡Solo háblale!
-*   **Descripción:** El bot procesa lenguaje natural. Puedes preguntarle cosas, pedirle consejos o simplemente charlar. Además, puedes configurar su "personalidad" con el comando `.personalidad`.
+### 🧠 Inteligencia Artificial Avanzada
+*   **Uso:** ¡Solo háblale! (o menciónalo en grupos).
+*   **Descripción:** El bot procesa lenguaje natural. Puedes preguntarle cosas, pedirle consejos o simplemente charlar.
+*   **Modo Silencio:** Si la IA detecta que la conversación no va con ella o es spam, responderá internamente con `IGNORAR` para no interrumpir el flujo del grupo.
+*   **Personalidad:** Configura su comportamiento con el comando `.personalidad`.
 
 ### 🎮 Mini-Juegos y Azar
 *   **Comandos:** 
@@ -35,6 +39,12 @@ A diferencia de los bots tradicionales, **JUANCHOTE** utiliza una **Arquitectura
     *   `.moneda` 🪙 : Cara o cruz para decidir algo rápido.
     *   `.suerte` 🔮 : Tu predicción del día generada aleatoriamente.
     *   `.menu` 📜 : El panel principal que muestra todos los comandos activos.
+
+### ⚙️ Configuración y Utilidades
+*   **Comandos:**
+    *   `.audios [on|off]` 🔊 : Los administradores pueden activar o desactivar el procesamiento de audios en el grupo.
+    *   `.ping` ⚡ : Verifica la velocidad de respuesta del bot.
+*   **Reacciones Automáticas:** El bot reaccionará con un ✅ a los mensajes grupales para confirmar que los ha recibido.
 
 ### 🛡️ Herramientas Administrativas
 *   **Comando:** `.admin [acción]`
@@ -47,6 +57,7 @@ A diferencia de los bots tradicionales, **JUANCHOTE** utiliza una **Arquitectura
 
 ### 1️⃣ Requisitos Previos
 *   [Node.js](https://nodejs.org/) (Versión 16 o superior)
+*   [FFmpeg](https://ffmpeg.org/) (Necesario para el procesamiento de audio/videos)
 *   Una API Key de [Groq](https://console.groq.com/) (Gratis para empezar)
 
 ### 2️⃣ Clonar e Instalar
