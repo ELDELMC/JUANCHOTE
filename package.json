@@ -4,7 +4,8 @@
   "description": "Bot de WhatsApp modular con comandos administrativos usando Baileys",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "build:zip": "tar -a -c -f box-pull/bot.zip index.js package.json .env comandos utils data"
   },
   "keywords": [
     "whatsapp",
