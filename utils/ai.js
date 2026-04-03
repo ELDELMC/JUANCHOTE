@@ -18,11 +18,11 @@ async function askAI(prompt, isGroup = false) {
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "llama-3.3-70b-versatile", // modelo actualizado
+        model: "llama-3.3-70b-versatile",
         messages: [
           {
             role: "system",
-            content: systemContent // 👈 personalidad dinámica con contexto
+            content: systemContent
           },
           {
             role: "user",
@@ -46,4 +46,51 @@ async function askAI(prompt, isGroup = false) {
   }
 }
 
-module.exports = { askAI };
+/**
+ * 🎯 Detecta si el usuario quiere iniciar, sumar o cerrar una cuenta.
+ * Retorna: "INICIAR", "CERRAR", "NUMERO" o "NADA"
+ */
+async function detectarIntencionContable(prompt) {
+  if (!API_KEY) return "NADA";
+
+  try {
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.1-8b-instant", // Modelo más rápido para clasificación
+        messages: [
+          {
+            role: "system",
+            content: `Eres un clasificador de intenciones para un bot de contabilidad. 
+Analiza el mensaje del usuario y responde ÚNICAMENTE con una de estas palabras:
+- INICIAR: Si el usuario quiere empezar a hacer una cuenta, sacar porcentajes de ventas, o dice algo como "vamos a hacer la cuenta".
+- CERRAR: Si el usuario indica que ya terminó, pide el total, dice "listo", "ya", "saca el resultado" o similar.
+- NUMERO: Si el mensaje contiene montos de dinero, números para sumar (ej: "100.000", "50k", "200.000 + 10.000").
+- NADA: Si no tiene que ver con contabilidad.
+
+RESPUESTA CORTA: SOLO LA PALABRA.`
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    const match = response.data.choices[0].message.content.trim().toUpperCase();
+    if (["INICIAR", "CERRAR", "NUMERO"].includes(match)) return match;
+    return "NADA";
+
+  } catch (error) {
+    return "NADA";
+  }
+}
+
+module.exports = { askAI, detectarIntencionContable };

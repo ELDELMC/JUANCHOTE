@@ -19,10 +19,11 @@ process.on('uncaughtException', (err) => {
 
 const { getText } = require('./utils/helpers');
 const { hasPermission } = require('./utils/permissions');
-const { askAI: handleAI } = require('./utils/ai');
+const { askAI: handleAI, detectarIntencionContable } = require('./utils/ai');
 const { transcribeAudio, textToSpeech } = require('./utils/audio');
 const { getGroupSettings } = require('./utils/settings');
 const { isUserMuted } = require('./utils/mute');
+const { iniciarCuenta, sumarValor, obtenerSesion, finalizarCuenta } = require('./utils/accounts');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 const fs = require('fs');
@@ -157,8 +158,63 @@ async function startBot() {
 
       console.log(`📩 ${from} [${sender}]: ${finalInputText}`);
 
-      // ✅ Reaccionar automáticamente a los mensajes de los grupos
-      if (isGroup(from)) {
+      // 📊 SISTEMA DE CONTABILIDAD (CUENTAS)
+      const sesionActiva = obtenerSesion(from);
+      const intencion = await detectarIntencionContable(finalInputText);
+
+      // A) Iniciar sesión si no hay una y la IA lo detecta
+      if (!sesionActiva && intencion === "INICIAR") {
+        iniciarCuenta(from);
+        return await sock.sendMessage(from, { text: "📥 *¡Modo Cuenta Activado!* 🧮\n\nPuedes enviarme los montos uno por uno o reenviarlos.\n\n✅ Reaccionaré con un emoji a cada valor.\n🏁 Cuando termines, dime algo como *'listo'* o *'dame el total'*." }, { quoted: msg });
+      }
+
+      // B) Si hay una sesión activa, procesar el mensaje
+      if (sesionActiva) {
+        if (intencion === "NUMERO") {
+          // Extraer todos los números del texto (soporta 100.000, 50k, 1,000,000, etc)
+          const numeros = finalInputText.match(/\d+([.,]\d+)?/g);
+          if (numeros) {
+            numeros.forEach(n => {
+              let val = n.replace(/[.,]/g, '');
+              // Soporte para "k" (50k -> 50000)
+              if (finalInputText.toLowerCase().includes(n + 'k')) val += '000';
+              sumarValor(from, parseFloat(val));
+            });
+            return await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
+          }
+        }
+
+        if (intencion === "CERRAR") {
+          const resultado = finalizarCuenta(from);
+          const total = resultado.total;
+          
+          const porc25 = total * 0.25;
+          const queda25 = total - porc25;
+          
+          const porc30 = total * 0.30;
+          const queda30 = total - porc30;
+
+          const f = (num) => new Intl.NumberFormat('es-CO').format(num);
+
+          const reporte = `📊 *REPORTE DE CUENTA FINAL* 📊\n\n` +
+                          `💰 *Total acumulado:* $${f(total)}\n` +
+                          `━━━━━━━━━━━━━━━\n\n` +
+                          `🔹 *OPCIÓN 25%*\n` +
+                          `▫️ Porcentaje: $${f(porc25)}\n` +
+                          `🏠 *Fundación queda con:* $${f(queda25)}\n\n` +
+                          `🔸 *OPCIÓN 30%*\n` +
+                          `▫️ Porcentaje: $${f(porc30)}\n` +
+                          `🏠 *Fundación queda con:* $${f(queda30)}\n\n` +
+                          `✅ *Cuenta cerrada con éxito.*`;
+
+          return await sock.sendMessage(from, { text: reporte }, { quoted: msg });
+        }
+        
+        // Si hay sesión pero no es número ni cerrar, dejar que la IA normal responda o ignorar si es grupo
+      }
+
+      // ✅ Reaccionar automáticamente a los mensajes de los grupos (si no es cuenta)
+      if (isGroup(from) && !sesionActiva) {
         setTimeout(async () => {
           try {
             await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
