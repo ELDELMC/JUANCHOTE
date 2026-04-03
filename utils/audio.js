@@ -93,6 +93,8 @@ async function textToSpeech(text) {
       // Convertir MP3 a OGG Opus para que WhatsApp lo acepte como PTT (Voice Note)
       ffmpeg(tempMp3)
         .audioCodec('libopus')
+        .audioBitrate('24k') // Optimización de peso extrema para WhatsApp
+        .audioFilters('atempo=1.05') // Pequeño ajuste de velocidad para sonar menos robótico
         .on('end', () => {
           fs.unlinkSync(tempMp3);
           resolve(tempOgg);

@@ -3,7 +3,8 @@ require('dotenv').config();
 const {
   default: makeWASocket,
   useMultiFileAuthState,
-  DisconnectReason
+  DisconnectReason,
+  fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
 const P = require('pino');
@@ -52,12 +53,14 @@ let botStartTime = Date.now();
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth');
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  console.log(`📡 Conectando con versión de WA v${version.join('.')} (Latest: ${isLatest})`);
 
   const sock = makeWASocket({
     auth: state,
-    logger: P({ level: 'info' }), // 📝 Activado 'info' para ver qué pasa en el servidor
-    browser: ['Mac OS', 'Chrome', '1.0.0']
-    // Se eliminó 'version' para que baileys use la más reciente automáticamente
+    version,
+    logger: P({ level: 'silent' }), // 📝 Cambiado a silent para limpiar logs, pero puedes usar 'info' si necesitas debugar
+    browser: ['Ubuntu', 'Chrome', '131.0.6778.85']
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -165,6 +168,7 @@ async function startBot() {
       // A) Iniciar sesión si no hay una y la IA lo detecta
       if (!sesionActiva && intencion === "INICIAR") {
         iniciarCuenta(from);
+        console.log(`[BOT] 📥 Enviando inicio de cuenta a ${from}`);
         return await sock.sendMessage(from, { text: "📥 *¡Modo Cuenta Activado!* 🧮\n\nPuedes enviarme los montos uno por uno o reenviarlos.\n\n✅ Reaccionaré con un emoji a cada valor.\n🏁 Cuando termines, dime algo como *'listo'* o *'dame el total'*." }, { quoted: msg });
       }
 
@@ -180,6 +184,7 @@ async function startBot() {
               if (finalInputText.toLowerCase().includes(n + 'k')) val += '000';
               sumarValor(from, parseFloat(val));
             });
+            console.log(`[BOT] ✅ Reaccionando a monto en ${from}`);
             return await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
           }
         }
@@ -207,6 +212,7 @@ async function startBot() {
                           `🏠 *Fundación queda con:* $${f(queda30)}\n\n` +
                           `✅ *Cuenta cerrada con éxito.*`;
 
+          console.log(`[BOT] 📊 Enviando reporte de cuenta a ${from}`);
           return await sock.sendMessage(from, { text: reporte }, { quoted: msg });
         }
         
@@ -215,12 +221,13 @@ async function startBot() {
 
       // ✅ Reaccionar automáticamente a los mensajes de los grupos (si no es cuenta)
       if (isGroup(from) && !sesionActiva) {
-        setTimeout(async () => {
-          try {
-            await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
-          } catch(err) { /* Ignorar si falla la reacción */ }
-        }, 2000); // 2 segundos después
-      }
+         setTimeout(async () => {
+           try {
+             console.log(`[BOT] ✅ Auto-reacción en grupo ${from}`);
+             await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
+           } catch(err) { /* Ignorar si falla la reacción */ }
+         }, 2000); // 2 segundos después
+       }
 
       // 🎯 COMANDOS CON PREFIJOS FLEXIBLES (. , ! + espacio opcional)
       const prefixRegex = /^[.,!]\s?/i;
@@ -240,6 +247,7 @@ async function startBot() {
             // Verificar permisos si el comando lo requiere
             if (cmdModule.permission && !hasPermission(msg, sender, cmdModule.permission)) {
               console.log('⛔ Intento sin permiso:', sender);
+              console.log(`[BOT] ⛔ Enviando error de permiso a ${from}`);
               await sock.sendMessage(from, { text: '⛔ No tienes permiso para usar este comando.' });
               return;
             }
@@ -272,6 +280,7 @@ async function startBot() {
          try {
             console.log('🗣️ Generando nota de voz TTS...');
             const audioPath = await textToSpeech(response);
+            console.log(`[BOT] 🗣️ Enviando audio TTS a ${from}`);
             await sock.sendMessage(from, {
                audio: { url: audioPath },
                mimetype: 'audio/mp4',
@@ -281,9 +290,11 @@ async function startBot() {
             if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
          } catch(e) {
             console.error("❌ Error enviando TTS, enviando texto como fallback:", e);
+            console.log(`[BOT] 📤 Enviando texto (fallback) a ${from}: ${response.slice(0, 50)}...`);
             await sock.sendMessage(from, { text: response }, { quoted: msg });
          }
       } else {
+         console.log(`[BOT] 📤 Enviando respuesta de IA a ${from}: ${response.slice(0, 50)}...`);
          await sock.sendMessage(from, { text: response }, { quoted: msg });
       }
 

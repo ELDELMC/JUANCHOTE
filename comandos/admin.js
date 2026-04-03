@@ -1,3 +1,5 @@
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+
 module.exports = {
   command: 'admin',
   handler: async ({ sock, msg, args, from, sender, isGroup }) => {
@@ -10,7 +12,7 @@ module.exports = {
       const metadata = await sock.groupMetadata(from);
 
       // BOT ADMIN
-      const botId = sock.user.id;
+      const botId = jidNormalizedUser(sock.user.id);
       const botIsAdmin = metadata.participants.some(p =>
         p.id === botId && p.admin
       );

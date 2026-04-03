@@ -1,3 +1,4 @@
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { parseDuration, muteUser } = require('../utils/mute');
 
 module.exports = {
@@ -9,7 +10,7 @@ module.exports = {
 
         try {
             const metadata = await sock.groupMetadata(from);
-            const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+            const botId = jidNormalizedUser(sock.user.id);
             const botIsAdmin = metadata.participants.some(p => p.id === botId && p.admin);
 
             if (!botIsAdmin) {
