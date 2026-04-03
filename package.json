@@ -16,6 +16,7 @@
   "license": "MIT",
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@travisvn/edge-tts": "^1.0.2",
     "@whiskeysockets/baileys": "^6.7.21",
     "axios": "^1.14.0",
     "dotenv": "^16.0.0",

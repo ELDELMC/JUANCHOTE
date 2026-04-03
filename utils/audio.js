@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const googleTTS = require('google-tts-api');
+const { EdgeTTS } = require('@travisvn/edge-tts');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 
@@ -41,31 +42,53 @@ async function transcribeAudio(buffer) {
 }
 
 /**
+ * Limpia el texto de markdown y caracteres especiales que el TTS no debe pronunciar.
+ */
+function cleanTextForTTS(text) {
+  if (!text) return "";
+  
+  return text
+    .replace(/[*_~`]/g, '')         // Elimina markdown (*bold*, _italic_, ~strike~, `code`)
+    .replace(/[#@]/g, '')           // Elimina # o @ que suelen leerse literal
+    .replace(/[-]{2,}/g, ' ')      // Convierte guiones largos en espacios
+    .replace(/[\[\]\(\)\{\}]/g, '') // Elimina paréntesis, corchetes, llaves
+    .replace(/[|\/\\]/g, ' ')       // Convierte barras en espacios
+    .replace(/\s+/g, ' ')          // Normaliza espacios
+    .trim();
+}
+
+/**
  * Recibe un texto y genera un archivo temporal .ogg en códec libopus (formato Voice Note de WhatsApp).
  * Devuelve la ruta absoluta del archivo generado.
  */
 async function textToSpeech(text) {
+  const ttsText = cleanTextForTTS(text);
+  
   return new Promise(async (resolve, reject) => {
     try {
-      // Si el texto es muy largo, google-tts-api tiene límite de 200 caracteres por default,
-      // pero getAudioUrl permite slow/lang. Cortamos o usamos getAllAudioUrls si es largo.
-      // Aquí usaremos getAllAudioBase64 que divide el texto automáticamente.
-      
-      const results = await googleTTS.getAllAudioBase64(text, {
-        lang: 'es', 
-        slow: false,
-        host: 'https://translate.google.com',
-        splitPunct: ',.?'
-      });
-
-      // Unimos los base64 en un buffer de MP3 completo
-      const buffers = results.map(res => Buffer.from(res.base64, 'base64'));
-      const finalMp3Buffer = Buffer.concat(buffers);
-
       const tempMp3 = path.join(os.tmpdir(), `tts_${Date.now()}.mp3`);
       const tempOgg = path.join(os.tmpdir(), `tts_${Date.now()}.ogg`);
-      
-      fs.writeFileSync(tempMp3, finalMp3Buffer);
+
+      // Intento con OpenAI si existe la KEY (Calidad Premium)
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          const response = await axios.post('https://api.openai.com/v1/audio/speech', {
+            model: "tts-1",
+            voice: "alloy",
+            input: ttsText
+          }, {
+            headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+            responseType: 'arraybuffer'
+          });
+          fs.writeFileSync(tempMp3, Buffer.from(response.data));
+        } catch (e) {
+          console.error("Fallo OpenAI TTS, usando Edge TTS fallback:", e.message);
+          await useEdgeTTS(ttsText, tempMp3);
+        }
+      } else {
+        // Por defecto: Edge TTS (Gratis, mucho mejor que Google Translate)
+        await useEdgeTTS(ttsText, tempMp3);
+      }
 
       // Convertir MP3 a OGG Opus para que WhatsApp lo acepte como PTT (Voice Note)
       ffmpeg(tempMp3)
@@ -88,4 +111,16 @@ async function textToSpeech(text) {
   });
 }
 
-module.exports = { transcribeAudio, textToSpeech };
+/**
+ * Función auxiliar para usar Edge TTS
+ */
+async function useEdgeTTS(text, outputPath) {
+  // Nota: El constructor espera (texto, voz, opciones)
+  // Voces recomendadas: es-CO-SalomeNeural, es-MX-DaliaNeural, es-ES-AlvaroNeural
+  const tts = new EdgeTTS(text, 'es-MX-DaliaNeural');
+  const { audio } = await tts.synthesize();
+  const arrayBuffer = await audio.arrayBuffer();
+  fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
+}
+
+module.exports = { transcribeAudio, textToSpeech, cleanTextForTTS };

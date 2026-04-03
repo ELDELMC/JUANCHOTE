@@ -14,6 +14,7 @@ const { hasPermission } = require('./utils/permissions');
 const { askAI: handleAI } = require('./utils/ai');
 const { transcribeAudio, textToSpeech } = require('./utils/audio');
 const { getGroupSettings } = require('./utils/settings');
+const { isUserMuted } = require('./utils/mute');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 const fs = require('fs');
@@ -106,6 +107,13 @@ async function startBot() {
       // 🛑 anti loop
       if (msg.key.fromMe) return;
 
+      // 🔇 Verificación de Mute (Silenciar miembro)
+      if (isGroup(from) && isUserMuted(from, sender)) {
+          console.log(`🔇 Mensaje eliminado de usuario silenciado: ${sender}`);
+          await sock.sendMessage(from, { delete: msg.key });
+          return;
+      }
+
       const text = getText(msg) || '';
       let finalInputText = text;
       let isVoice = false;
@@ -150,34 +158,37 @@ async function startBot() {
         }, 2000); // 2 segundos después
       }
 
-      // 🎯 COMANDOS
-      if (finalInputText.startsWith('.')) {
-        const [cmd, ...args] = finalInputText.slice(1).trim().split(/\s+/);
-        const command = cmd.toLowerCase();
+      // 🎯 COMANDOS CON PREFIJOS FLEXIBLES (. , ! + espacio opcional)
+      const prefixRegex = /^[.,!]\s?/i;
+      const matchPrefix = finalInputText.match(prefixRegex);
 
-        console.log(`⚡ Ejecutando comando: ${command}`);
+      if (matchPrefix) {
+        const bodyContent = finalInputText.slice(matchPrefix[0].length).trim();
+        if (bodyContent) {
+          const [commandName, ...args] = bodyContent.split(/\s+/);
+          const commandLowerCase = commandName.toLowerCase();
 
-        const cmdModule = commands.get(command);
+          console.log(`⚡ Ejecutando comando: ${commandLowerCase} con prefijo '${matchPrefix[0].trim()}'`);
 
-        if (cmdModule) {
-          // Verificar permisos si el comando lo requiere
-          if (cmdModule.permission && !hasPermission(msg, sender, cmdModule.permission)) {
-            console.log('⛔ Intento sin permiso:', sender);
-            await sock.sendMessage(from, { text: '⛔ No tienes permiso para usar este comando.' });
+          const cmdModule = commands.get(commandLowerCase);
+
+          if (cmdModule) {
+            // Verificar permisos si el comando lo requiere
+            if (cmdModule.permission && !hasPermission(msg, sender, cmdModule.permission)) {
+              console.log('⛔ Intento sin permiso:', sender);
+              await sock.sendMessage(from, { text: '⛔ No tienes permiso para usar este comando.' });
+              return;
+            }
+
+            // Ejecutar comando
+            try {
+              await cmdModule.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup, command: commandLowerCase });
+            } catch (err) {
+              console.error(`💥 ERROR en comando ${commandLowerCase}:`, err);
+              await sock.sendMessage(from, { text: '❌ Ocurrió un error al ejecutar el comando.' });
+            }
             return;
           }
-
-          // Ejecutar comando
-          try {
-            await cmdModule.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup, command });
-          } catch (err) {
-            console.error(`💥 ERROR en comando ${command}:`, err);
-            await sock.sendMessage(from, { text: '❌ Ocurrió un error al ejecutar el comando.' });
-          }
-          return;
-        } else {
-          // Si el comando no existe, que no pase a IA
-          return;
         }
       }
 

@@ -43,12 +43,14 @@ Además, cuenta con una **IA Selectiva** que sabe cuándo participar y cuándo g
 ### ⚙️ Configuración y Utilidades
 *   **Comandos:**
     *   `.audios [on|off]` 🔊 : Los administradores pueden activar o desactivar el procesamiento de audios en el grupo.
+    *   `.mute [tiempo]` 🔇 : Los administradores pueden silenciar a un miembro específico. El bot borrará sus mensajes por el tiempo indicado (ej: `.mute 1h`).
     *   `.ping` ⚡ : Verifica la velocidad de respuesta del bot.
-*   **Reacciones Automáticas:** El bot reaccionará con un ✅ a los mensajes grupales para confirmar que los ha recibido.
+*   **Prefijos Inteligentes:** Ahora el bot responde a los prefijos **`.`**, **`,`**, y **`!`**, y permite un espacio opcional (ej: `! ping`).
+*   **Reacciones Automáticas:** El bot reaccará con un ✅ a los mensajes grupales para confirmar que los ha recibido.
 
 ### 🛡️ Herramientas Administrativas
 *   **Comando:** `.admin [acción]`
-*   **Acciones:** `kick`, `promote`, `demote`, `mute`, `unmute`, `tagall`.
+*   **Acciones:** `kick`, `promote`, `demote`, `mute` (grupo completo), `unmute`, `tagall`.
 *   **Seguridad:** Solo los dueños o administradores configurados en el `.env` pueden usar estas potentes herramientas.
 
 ---
