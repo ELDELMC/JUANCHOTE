@@ -9,6 +9,14 @@ const {
 const P = require('pino');
 const qrcode = require('qrcode-terminal');
 
+// 🛑 Manejo global de errores (para que el bot no muera en silencio)
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 RECHAZO NO MANEJADO en:', promise, 'razón:', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('💥 EXCEPCIÓN NO CAPTURADA:', err);
+});
+
 const { getText } = require('./utils/helpers');
 const { hasPermission } = require('./utils/permissions');
 const { askAI: handleAI } = require('./utils/ai');
@@ -46,9 +54,9 @@ async function startBot() {
 
   const sock = makeWASocket({
     auth: state,
-    logger: P({ level: 'silent' }),
-    browser: ['Mac OS', 'Chrome', '1.0.0'],
-    version: [2, 3000, 1034074495]
+    logger: P({ level: 'info' }), // 📝 Activado 'info' para ver qué pasa en el servidor
+    browser: ['Mac OS', 'Chrome', '1.0.0']
+    // Se eliminó 'version' para que baileys use la más reciente automáticamente
   });
 
   sock.ev.on('creds.update', saveCreds);
