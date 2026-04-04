@@ -2,7 +2,7 @@ const { checkAdmin } = require('../utils/helpers');
 
 module.exports = {
   command: ['ayuda', 'help'],
-  handler: async ({ sock, from, sender, isGroup }) => {
+  handler: async ({ sock, msg, from, sender, isGroup, isMe }) => {
     let name = 'Grupo';
     let isAdmin = false;
 
@@ -10,7 +10,7 @@ module.exports = {
       try {
         const metadata = await sock.groupMetadata(from);
         name = metadata.subject;
-        isAdmin = checkAdmin(metadata.participants, sender);
+        isAdmin = checkAdmin(metadata.participants, sender) || isMe;
       } catch (e) {
         console.error('❌ Error obteniendo metadata para ayuda:', e);
       }

@@ -3,7 +3,7 @@ const { checkAdmin } = require('../utils/helpers');
 
 module.exports = {
   command: 'admin',
-  handler: async ({ sock, msg, args, from, sender, isGroup }) => {
+  handler: async ({ sock, msg, args, from, sender, isGroup, isMe }) => {
 
     if (!isGroup) {
       return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
@@ -23,7 +23,7 @@ module.exports = {
       }
 
       // USUARIO ADMIN
-      const isAdmin = checkAdmin(metadata.participants, sender);
+      const isAdmin = checkAdmin(metadata.participants, sender) || isMe;
 
       if (!isAdmin) {
         return await sock.sendMessage(from, {

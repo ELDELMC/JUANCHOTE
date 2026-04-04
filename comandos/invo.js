@@ -11,7 +11,7 @@ const { checkAdmin } = require('../utils/helpers');
 
 module.exports = {
   command: ['invo', 'invocar', 'agregar'],
-  handler: async ({ sock, from, sender, isGroup }) => {
+  handler: async ({ sock, from, sender, args, isGroup, isMe }) => {
     // Solo grupos
     if (!isGroup) {
       return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
@@ -29,7 +29,7 @@ module.exports = {
       }
 
       // Verificar que el usuario sea admin
-      if (!checkAdmin(metadata.participants, sender)) {
+      if (!checkAdmin(metadata.participants, sender) && !isMe) {
         return await sock.sendMessage(from, { text: '❌ Solo los administradores pueden usar este comando.' });
       }
     } catch (e) {

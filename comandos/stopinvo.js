@@ -8,14 +8,14 @@ const { checkAdmin } = require('../utils/helpers');
 
 module.exports = {
   command: ['stopinvo', 'pararinvo', 'stopinvocacion'],
-  handler: async ({ sock, from, sender, isGroup }) => {
+  handler: async ({ sock, from, sender, isGroup, isMe }) => {
     if (!isGroup) {
       return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
     }
 
     try {
       const metadata = await sock.groupMetadata(from);
-      if (!checkAdmin(metadata.participants, sender)) {
+      if (!checkAdmin(metadata.participants, sender) && !isMe) {
         return await sock.sendMessage(from, { text: '❌ Solo admins.' });
       }
     } catch (e) {

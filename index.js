@@ -308,7 +308,7 @@ async function startBot() {
             // Ejecutar comando
             try {
               const isGroupMsg = isGroup(from);
-              await cmdModule.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup: isGroupMsg, command: commandNormalized });
+              await cmdModule.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup: isGroupMsg, command: commandNormalized, isMe: isFromMe });
               console.log(`✅ Comando ${commandNormalized} ejecutado correctamente por ${sender}`);
             } catch (err) {
               console.error(`💥 ERROR en comando ${commandNormalized}:`, err);

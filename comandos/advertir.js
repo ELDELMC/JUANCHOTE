@@ -4,12 +4,12 @@ const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 module.exports = {
   command: ['advertir', 'strike', 'warn'],
-  handler: async ({ sock, msg, from, sender, args, isGroup }) => {
+  handler: async ({ sock, msg, from, sender, args, isGroup, isMe }) => {
     if (!isGroup) return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
 
     try {
       const metadata = await sock.groupMetadata(from);
-      const isAdmin = checkAdmin(metadata.participants, sender);
+      const isAdmin = checkAdmin(metadata.participants, sender) || isMe;
       if (!isAdmin) return await sock.sendMessage(from, { text: '❌ Solo admins.' });
 
       let target = null;
