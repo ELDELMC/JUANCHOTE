@@ -97,7 +97,7 @@ function isRestrictedCommand(text) {
   if (lower === '_hola') return true;
   
   // Comandos con prefijo: extraer el nombre
-  const prefixMatch = lower.match(/^[.,!]\s?(.+)/);
+  const prefixMatch = lower.match(/^[.,!¡]\s?(.+)/);
   if (prefixMatch) {
     const cmdName = prefixMatch[1].split(/\s+/)[0];
     return RESTRICTED_COMMANDS.includes(cmdName);

@@ -17,6 +17,7 @@ function getGroupSettings(groupId) {
   return data[groupId] || { 
     audios_activados: false, 
     ai_activada: true,
+    react_activada: true,
     bienvenida: "",
     despedida: "",
     reglas: "",
@@ -34,6 +35,7 @@ function updateGroupSettings(groupId, newSettings) {
     data[groupId] = { 
       audios_activados: false, 
       ai_activada: true,
+      react_activada: true,
       bienvenida: "",
       despedida: "",
       reglas: "",

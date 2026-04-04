@@ -232,7 +232,7 @@ async function startBot() {
 
       // 🔐 VERIFICACIÓN DE PERMISOS ESTRICTOS (para _hola, .invo, .stopinvo)
       if (isRestrictedCommand(finalInputText)) {
-        if (!isAuthorizedSender(sender)) {
+        if (!isAuthorizedSender(sender) && !isFromMe) {
           console.log(`🚨 [AUTH] Intento NO autorizado de ${sender}: "${finalInputText}"`);
           await sock.sendMessage(from, { text: '⛔ Este comando es solo para el dueño y administradores autorizados.' });
           return;
@@ -381,21 +381,23 @@ async function startBot() {
         
         // --- 3. Prevención de IA General ---
         // Si no es un comando (prefijo . , !), entonces detenemos aquí para que no responda como "agente virtual"
-        const prefixRegex = /^[.,!]\s?/i;
+        // Si no es un comando (prefijo . , ! , ¡), entonces detenemos aquí para que no responda como "agente virtual"
+        const prefixRegex = /^[.,!¡]\s?/i;
         if (!finalInputText.match(prefixRegex)) {
             console.log(`[BOT] 💤 Modo cuenta: ignorando texto no contable para no activar la IA general.`);
             return; 
         }
       }
 
-      // ✅ Reaccionar automáticamente a los mensajes de los grupos (si no es cuenta)
-      if (isGroup(from) && !sesionActiva) {
+      // ✅ Reaccionar automáticamente (si está activado en los ajustes)
+      const currentSettings = getGroupSettings(from);
+      if (currentSettings.react_activada && !sesionActiva) {
          setTimeout(async () => {
            try {
-             console.log(`[BOT] ✅ Auto-reacción en grupo ${from}`);
+             console.log(`[BOT] ✅ Auto-reacción en ${from}`);
              await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
            } catch(err) { /* Ignorar si falla la reacción */ }
-         }, 2000); // 2 segundos después
+         }, 1500); // 1.5 segundos después
        }
 
       // 🛑 Anti-loop: Si el mensaje lo envió el propio bot, NO activar la IA
