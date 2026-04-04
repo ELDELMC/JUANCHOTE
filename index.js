@@ -1,4 +1,8 @@
-require('dotenv').config();
+try {
+  require('dotenv').config();
+} catch (e) {
+  console.log('ℹ️ No se cargó el archivo .env (se usarán variables del sistema/panel)');
+}
 
 const {
   default: makeWASocket,
@@ -63,10 +67,23 @@ async function startBot() {
   console.log(`📡 Conectando con versión de WA v${version.join('.')} (Latest: ${isLatest})`);
 
   // 🔍 Diagnóstico de APIs (Debug para BoxMineWorld)
-  console.log('🔍 [DIAGNÓSTICO API] Verificando llaves...');
-  console.log(`- Gemini: ${process.env.GEMINI_API_KEY ? '✅ Configurada' : '❌ NO ENCONTRADA'}`);
-  console.log(`- Groq:   ${process.env.GROQ_API_KEY ? '✅ Configurada' : '❌ NO ENCONTRADA'}`);
-  console.log(`- x.ai:   ${process.env.XAI_API_KEY ? '✅ Configurada' : '❌ NO ENCONTRADA'}`);
+  console.log('\n--- 🔍 [DIAGNÓSTICO API] ---');
+  const keys = {
+      'GEMINI_API_KEY': process.env.GEMINI_API_KEY,
+      'GROQ_API_KEY': process.env.GROQ_API_KEY,
+      'XAI_API_KEY': process.env.XAI_API_KEY
+  };
+
+  for (const [name, value] of Object.entries(keys)) {
+      if (value) {
+          const isDotEnv = value === require('dotenv').config().parsed?.[name];
+          const source = isDotEnv ? '.env' : 'Sistema/Panel';
+          console.log(`✅ ${name}: CONFIGURADA (Origen: ${source})`);
+      } else {
+          console.log(`❌ ${name}: NO CONFIGURADA`);
+      }
+  }
+  console.log('---------------------------\n');
   
   if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.XAI_API_KEY) {
     console.warn('⚠️ [ALERTA] No se detectó ninguna llave de IA en el entorno. Revisa el archivo .env o las variables en el panel.');
