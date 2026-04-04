@@ -3,7 +3,11 @@ const path = require('path');
 
 const filePath = path.join(__dirname, '../data/personality.json');
 
-function getPersonality() {
+function getPersonality(isGroup = false) {
+  if (isGroup) {
+      return "Eres un asistente de IA útil y amigable para grupos de WhatsApp. Responde de forma clara, natural y breve. Ayuda con dudas generales y mantén buen ambiente.";
+  }
+  
   if (!fs.existsSync(filePath)) {
     return "Eres un asistente colombiano, amigable y útil.";
   }

@@ -14,7 +14,16 @@ function ensureSettingsFile() {
 function getGroupSettings(groupId) {
   ensureSettingsFile();
   const data = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-  return data[groupId] || { audios_activados: false }; // Audios apagados por defecto
+  return data[groupId] || { 
+    audios_activados: false, 
+    ai_activada: true,
+    bienvenida: "",
+    despedida: "",
+    reglas: "",
+    antilink: false,
+    antispam: false,
+    strikes: {} // Estructura: { "jid": { count: 0, reasons: [] } }
+  };
 }
 
 function updateGroupSettings(groupId, newSettings) {
@@ -22,7 +31,16 @@ function updateGroupSettings(groupId, newSettings) {
   const data = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
   
   if (!data[groupId]) {
-    data[groupId] = { audios_activados: false };
+    data[groupId] = { 
+      audios_activados: false, 
+      ai_activada: true,
+      bienvenida: "",
+      despedida: "",
+      reglas: "",
+      antilink: false,
+      antispam: false,
+      strikes: {}
+    };
   }
   
   data[groupId] = { ...data[groupId], ...newSettings };

@@ -1,21 +1,20 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { checkAdmin } = require('../utils/helpers');
 
 module.exports = {
   command: 'admin',
   handler: async ({ sock, msg, args, from, sender, isGroup }) => {
 
-    if (!isGroup(from)) {
-      return await sock.sendMessage(from, { text: '❌ Solo funciona en grupos.' });
+    if (!isGroup) {
+      return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
     }
 
     try {
       const metadata = await sock.groupMetadata(from);
 
       // BOT ADMIN
-      const botId = jidNormalizedUser(sock.user.id);
-      const botIsAdmin = metadata.participants.some(p =>
-        p.id === botId && p.admin
-      );
+      const botId = sock.user.id;
+      const botIsAdmin = checkAdmin(metadata.participants, botId);
 
       if (!botIsAdmin) {
         return await sock.sendMessage(from, {
@@ -24,9 +23,7 @@ module.exports = {
       }
 
       // USUARIO ADMIN
-      const isAdmin = metadata.participants.some(p =>
-        p.id === sender && p.admin
-      );
+      const isAdmin = checkAdmin(metadata.participants, sender);
 
       if (!isAdmin) {
         return await sock.sendMessage(from, {
@@ -44,6 +41,8 @@ module.exports = {
       } else if (context?.participant) {
         target = context.participant;
       }
+      
+      if (target) target = jidNormalizedUser(target);
 
       // ==================== COMANDOS ====================
 

@@ -1,24 +1,26 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { parseDuration, muteUser } = require('../utils/mute');
+const { checkAdmin } = require('../utils/helpers');
 
 module.exports = {
     command: ['mute', 'silencio', 'silenciar'],
     handler: async ({ sock, msg, args, from, sender, isGroup }) => {
-        if (!isGroup(from)) {
-            return await sock.sendMessage(from, { text: '❌ Este comando solo funciona en grupos.' });
+        if (!isGroup) {
+            return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
         }
 
         try {
             const metadata = await sock.groupMetadata(from);
-            const botId = jidNormalizedUser(sock.user.id);
-            const botIsAdmin = metadata.participants.some(p => p.id === botId && p.admin);
-
+            const botId = sock.user.id;
+            const botIsAdmin = checkAdmin(metadata.participants, botId);
+            
             if (!botIsAdmin) {
                 return await sock.sendMessage(from, { text: '❌ Necesito ser administrador para silenciar miembros (borrar sus mensajes).' });
             }
 
-            const senderIsAdmin = metadata.participants.some(p => p.id === sender && p.admin);
+            const senderIsAdmin = checkAdmin(metadata.participants, sender);
             if (!senderIsAdmin) {
+                console.log(`⛔ Admin check falló para ${sender}. Admins:`, metadata.participants.filter(p => p.admin).map(p => p.id));
                 return await sock.sendMessage(from, { text: '❌ Solo los administradores pueden usar este comando.' });
             }
 
@@ -27,6 +29,8 @@ module.exports = {
             if (!target && msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length) {
                 target = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
             }
+            
+            if (target) target = jidNormalizedUser(target);
 
             if (!target) {
                 return await sock.sendMessage(from, { text: '❌ Debes responder a un mensaje o etiquetar a alguien para silenciarlo.' });

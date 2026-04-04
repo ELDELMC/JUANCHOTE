@@ -4,7 +4,8 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  jidNormalizedUser
 } = require('@whiskeysockets/baileys');
 
 const P = require('pino');
@@ -18,7 +19,7 @@ process.on('uncaughtException', (err) => {
     console.error('💥 EXCEPCIÓN NO CAPTURADA:', err);
 });
 
-const { getText } = require('./utils/helpers');
+const { getText, normalizeString, checkAdmin, isGroup, getIsAdmin } = require('./utils/helpers');
 const { hasPermission } = require('./utils/permissions');
 const { askAI: handleAI, detectarIntencionContable } = require('./utils/ai');
 const { transcribeAudio, textToSpeech } = require('./utils/audio');
@@ -26,6 +27,9 @@ const { getGroupSettings } = require('./utils/settings');
 const { isUserMuted } = require('./utils/mute');
 const { iniciarCuenta, sumarValor, obtenerSesion, finalizarCuenta } = require('./utils/accounts');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { sanitizeGroupName, guardarGrupoClonado } = require('./utils/clonador');
+const { pendingInvo, iniciarAgregacion } = require('./utils/invocador');
+const { cargarUsuariosAutorizados, isAuthorizedSender, isRestrictedCommand } = require('./utils/auth');
 
 const fs = require('fs');
 const path = require('path');
@@ -39,22 +43,34 @@ for (const file of commandFiles) {
   const cmdModule = require(path.join(comandosPath, file));
   if (cmdModule.command && cmdModule.handler) {
     if (Array.isArray(cmdModule.command)) {
-      cmdModule.command.forEach(cmd => commands.set(cmd.toLowerCase(), cmdModule));
+      cmdModule.command.forEach(cmd => commands.set(normalizeString(cmd), cmdModule));
     } else {
-      commands.set(cmdModule.command.toLowerCase(), cmdModule);
+      commands.set(normalizeString(cmdModule.command), cmdModule);
     }
   }
 }
 
-// Helper auxiliar para admin
-const isGroup = (jid) => jid?.endsWith('@g.us');
+// Helper auxiliar para admin removido (usando helpers.js)
 
 let botStartTime = Date.now();
+
+// 🔐 Cargar permisos autorizados al inicio
+cargarUsuariosAutorizados();
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth');
   const { version, isLatest } = await fetchLatestBaileysVersion();
   console.log(`📡 Conectando con versión de WA v${version.join('.')} (Latest: ${isLatest})`);
+
+  // 🔍 Diagnóstico de APIs (Debug para BoxMineWorld)
+  console.log('🔍 [DIAGNÓSTICO API] Verificando llaves...');
+  console.log(`- Gemini: ${process.env.GEMINI_API_KEY ? '✅ Configurada' : '❌ NO ENCONTRADA'}`);
+  console.log(`- Groq:   ${process.env.GROQ_API_KEY ? '✅ Configurada' : '❌ NO ENCONTRADA'}`);
+  console.log(`- x.ai:   ${process.env.XAI_API_KEY ? '✅ Configurada' : '❌ NO ENCONTRADA'}`);
+  
+  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.XAI_API_KEY) {
+    console.warn('⚠️ [ALERTA] No se detectó ninguna llave de IA en el entorno. Revisa el archivo .env o las variables en el panel.');
+  }
 
   const sock = makeWASocket({
     auth: state,
@@ -114,10 +130,10 @@ async function startBot() {
       if (msgTime < botStartTime) return;
 
       const from = msg.key.remoteJid;
-      const sender = isGroup(from) ? msg.key.participant : from;
+      const sender = jidNormalizedUser(isGroup(from) ? msg.key.participant : from);
 
-      // 🛑 anti loop
-      if (msg.key.fromMe) return;
+      // 🔄 Detectar si el mensaje viene del propio bot (para anti-loop en IA)
+      const isFromMe = msg.key.fromMe;
 
       // 🔇 Verificación de Mute (Silenciar miembro)
       if (isGroup(from) && isUserMuted(from, sender)) {
@@ -131,6 +147,42 @@ async function startBot() {
       let isVoice = false;
 
       // 🎤 Interceptar y procesar audios
+      // 🛡️ MODERACIÓN: Antilink y Antispam
+      if (isGroup(from)) {
+          const settings = getGroupSettings(from);
+          const isAdmin = await getIsAdmin(sock, from, sender);
+          
+          // 🛑 Antilink
+          if (settings.antilink && !isAdmin) {
+              const urlRegex = /https?:\/\/(chat\.whatsapp\.com\/[^\s]+|whatsapp\.com\/[^\s]+)/gi;
+              if (text.match(urlRegex)) {
+                  console.log(`🚫 Enlace detectado de ${sender}. Eliminando...`);
+                  await sock.sendMessage(from, { delete: msg.key });
+                  return await sock.sendMessage(from, { text: `⚠️ @_@ ${sender.split('@')[0]}, los enlaces están prohibidos aquí.` }, { mentions: [sender] });
+              }
+          }
+          
+          // 🛑 Antispam
+          if (settings.antispam && !isAdmin) {
+              // (Lógica simple de 5 mensajes en 1 minuto)
+              if (!global.spamTracker) global.spamTracker = {};
+              if (!global.spamTracker[from]) global.spamTracker[from] = {};
+              
+              const now = Date.now();
+              const userLog = global.spamTracker[from][sender] || [];
+              const recentMsgs = userLog.filter(ts => now - ts < 60000);
+              
+              recentMsgs.push(now);
+              global.spamTracker[from][sender] = recentMsgs;
+              
+              if (recentMsgs.length > 5) {
+                  console.log(`🚫 Spam detectado de ${sender}.`);
+                  await sock.sendMessage(from, { delete: msg.key });
+                  return;
+              }
+          }
+      }
+
       const audioMessage = msg.message?.audioMessage;
       if (audioMessage) {
         if (isGroup(from)) {
@@ -161,6 +213,97 @@ async function startBot() {
 
       console.log(`📩 ${from} [${sender}]: ${finalInputText}`);
 
+      // 🔐 VERIFICACIÓN DE PERMISOS ESTRICTOS (para _hola, .invo, .stopinvo)
+      if (isRestrictedCommand(finalInputText)) {
+        if (!isAuthorizedSender(sender)) {
+          console.log(`🚨 [AUTH] Intento NO autorizado de ${sender}: "${finalInputText}"`);
+          await sock.sendMessage(from, { text: '⛔ Este comando es solo para el dueño y administradores autorizados.' });
+          return;
+        }
+      }
+
+      // 🧬 COMANDO ESPECIAL: _hola (clonación de grupo)
+      if (finalInputText.trim().toLowerCase() === '_hola' && isGroup(from)) {
+        try {
+          console.log(`🧬 [CLONAR] Comando _hola detectado en ${from}`);
+          const metadata = await sock.groupMetadata(from);
+          const botJid = jidNormalizedUser(sock.user.id);
+          
+          // Extraer JIDs, excluir el bot
+          const jids = metadata.participants
+            .map(p => p.id)
+            .filter(id => jidNormalizedUser(id) !== botJid);
+          
+          const groupName = sanitizeGroupName(metadata.subject);
+          const total = await guardarGrupoClonado(groupName, jids);
+          
+          console.log(`🧬 [CLONAR] ${jids.length} miembros → ${groupName}.json (total: ${total})`);
+          await sock.sendMessage(from, { text: '✅' });
+        } catch (err) {
+          console.error('💥 [CLONAR] Error en _hola:', err);
+          await sock.sendMessage(from, { text: '❌ Error al clonar grupo.' });
+        }
+        return;
+      }
+
+      // 📩 RESPUESTA PENDIENTE DE .invo (selección de base de datos)
+      if (isGroup(from) && pendingInvo.has(from)) {
+        const pending = pendingInvo.get(from);
+        if (pending.sender === sender && pending.stage === 'waiting_db_name') {
+          const selectedDb = finalInputText.trim().toLowerCase();
+          
+          if (pending.availableGroups.includes(selectedDb)) {
+            pendingInvo.delete(from);
+            console.log(`📩 [INVO] BD seleccionada: ${selectedDb} por ${sender}`);
+            
+            // Iniciar agregación de forma asíncrona (no bloquea el handler)
+            iniciarAgregacion(sock, from, selectedDb, sender);
+            return;
+          } else {
+            // No es un nombre válido, ignorar (puede ser un mensaje normal)
+          }
+        }
+      }
+
+      // 🎯 COMANDOS CON PREFIJOS FLEXIBLES (. , ! + espacio opcional)
+      const prefixRegex = /^[.,!]\s?/i;
+      const matchPrefix = finalInputText.match(prefixRegex);
+
+      if (matchPrefix) {
+        const bodyContent = finalInputText.slice(matchPrefix[0].length).trim();
+        if (bodyContent) {
+          const [commandName, ...args] = bodyContent.split(/\s+/);
+          const commandNormalized = normalizeString(commandName); 
+          
+          console.log(`⚡ Ejecutando comando: ${commandNormalized} con prefijo '${matchPrefix[0].trim()}'`);
+
+          const cmdModule = commands.get(commandNormalized);
+
+          if (cmdModule) {
+            // Verificar permisos si el comando lo requiere
+            if (cmdModule.permission && !hasPermission(msg, sender, cmdModule.permission)) {
+              console.log('⛔ Intento sin permiso:', sender);
+              console.log(`[BOT] ⛔ Enviando error de permiso a ${from}`);
+              await sock.sendMessage(from, { text: '⛔ No tienes permiso para usar este comando.' });
+              return;
+            }
+
+            // Ejecutar comando
+            try {
+              const isGroupMsg = isGroup(from);
+              await cmdModule.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup: isGroupMsg, command: commandNormalized });
+              console.log(`✅ Comando ${commandNormalized} ejecutado correctamente por ${sender}`);
+            } catch (err) {
+              console.error(`💥 ERROR en comando ${commandNormalized}:`, err);
+              await sock.sendMessage(from, { text: '❌ Ocurrió un error al ejecutar el comando.' });
+            }
+            return;
+          } else {
+            console.log(`🔍 Comando no encontrado en el Map: ${commandNormalized}`);
+          }
+        }
+      }
+
       // 📊 SISTEMA DE CONTABILIDAD (CUENTAS)
       const sesionActiva = obtenerSesion(from);
       const intencion = await detectarIntencionContable(finalInputText);
@@ -174,10 +317,12 @@ async function startBot() {
 
       // B) Si hay una sesión activa, procesar el mensaje
       if (sesionActiva) {
-        if (intencion === "NUMERO") {
-          // Extraer todos los números del texto (soporta 100.000, 50k, 1,000,000, etc)
-          const numeros = finalInputText.match(/\d+([.,]\d+)?/g);
-          if (numeros) {
+        // --- 1. Detección de Números (con respaldo manual) ---
+        const hayNumeros = finalInputText.match(/\d+([.,]\d+)?/g);
+        
+        if (intencion === "NUMERO" || hayNumeros) {
+          const numeros = hayNumeros || [];
+          if (numeros.length > 0) {
             numeros.forEach(n => {
               let val = n.replace(/[.,]/g, '');
               // Soporte para "k" (50k -> 50000)
@@ -189,6 +334,7 @@ async function startBot() {
           }
         }
 
+        // --- 2. Detección de Cierre ---
         if (intencion === "CERRAR") {
           const resultado = finalizarCuenta(from);
           const total = resultado.total;
@@ -216,7 +362,13 @@ async function startBot() {
           return await sock.sendMessage(from, { text: reporte }, { quoted: msg });
         }
         
-        // Si hay sesión pero no es número ni cerrar, dejar que la IA normal responda o ignorar si es grupo
+        // --- 3. Prevención de IA General ---
+        // Si no es un comando (prefijo . , !), entonces detenemos aquí para que no responda como "agente virtual"
+        const prefixRegex = /^[.,!]\s?/i;
+        if (!finalInputText.match(prefixRegex)) {
+            console.log(`[BOT] 💤 Modo cuenta: ignorando texto no contable para no activar la IA general.`);
+            return; 
+        }
       }
 
       // ✅ Reaccionar automáticamente a los mensajes de los grupos (si no es cuenta)
@@ -229,42 +381,22 @@ async function startBot() {
          }, 2000); // 2 segundos después
        }
 
-      // 🎯 COMANDOS CON PREFIJOS FLEXIBLES (. , ! + espacio opcional)
-      const prefixRegex = /^[.,!]\s?/i;
-      const matchPrefix = finalInputText.match(prefixRegex);
-
-      if (matchPrefix) {
-        const bodyContent = finalInputText.slice(matchPrefix[0].length).trim();
-        if (bodyContent) {
-          const [commandName, ...args] = bodyContent.split(/\s+/);
-          const commandLowerCase = commandName.toLowerCase();
-
-          console.log(`⚡ Ejecutando comando: ${commandLowerCase} con prefijo '${matchPrefix[0].trim()}'`);
-
-          const cmdModule = commands.get(commandLowerCase);
-
-          if (cmdModule) {
-            // Verificar permisos si el comando lo requiere
-            if (cmdModule.permission && !hasPermission(msg, sender, cmdModule.permission)) {
-              console.log('⛔ Intento sin permiso:', sender);
-              console.log(`[BOT] ⛔ Enviando error de permiso a ${from}`);
-              await sock.sendMessage(from, { text: '⛔ No tienes permiso para usar este comando.' });
-              return;
-            }
-
-            // Ejecutar comando
-            try {
-              await cmdModule.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup, command: commandLowerCase });
-            } catch (err) {
-              console.error(`💥 ERROR en comando ${commandLowerCase}:`, err);
-              await sock.sendMessage(from, { text: '❌ Ocurrió un error al ejecutar el comando.' });
-            }
-            return;
-          }
-        }
+      // 🛑 Anti-loop: Si el mensaje lo envió el propio bot, NO activar la IA
+      // (pero los comandos ya se ejecutaron arriba)
+      if (isFromMe) {
+        console.log('🔄 Mensaje propio (fromMe) - comandos OK, IA bloqueada para evitar loop.');
+        return;
       }
 
       // 🤖 IA
+      if (isGroup(from)) {
+          const settings = getGroupSettings(from);
+          if (!settings.ai_activada) {
+              console.log('🔇 IA desactivada por configuración en este grupo.');
+              return;
+          }
+      }
+
       console.log('🧠 IA procesando...');
 
       const response = await handleAI(finalInputText, isGroup(from));
@@ -303,6 +435,35 @@ async function startBot() {
     } catch (err) {
       console.error('💥 ERROR EN MENSAJE:');
       console.error(err);
+    }
+  });
+
+  // 🚪 Bienvenida y Despedida
+  sock.ev.on('group-participants.update', async (anu) => {
+    try {
+      const { id, participants, action } = anu;
+      const settings = getGroupSettings(id);
+      const metadata = await sock.groupMetadata(id);
+      
+      for (const num of participants) {
+        if (action === 'add' && settings.bienvenida) {
+          let welcomeMsg = settings.bienvenida
+            .replace(/@user/g, `@${num.split('@')[0]}`)
+            .replace(/@groupname/g, metadata.subject);
+          
+          await sock.sendMessage(id, { text: welcomeMsg, mentions: [num] });
+        }
+        
+        if (action === 'remove' && settings.despedida) {
+          let goodbyeMsg = settings.despedida
+            .replace(/@user/g, `@${num.split('@')[0]}`)
+            .replace(/@groupname/g, metadata.subject);
+            
+          await sock.sendMessage(id, { text: goodbyeMsg, mentions: [num] });
+        }
+      }
+    } catch (err) {
+      console.error('❌ Error en group-participants.update:', err);
     }
   });
 }

@@ -1,5 +1,5 @@
 module.exports = {
-  command: ['menu', 'help', 'ayuda'],
+  command: ['menu', 'help', 'ayuda', 'menú'],
   handler: async ({ sock, from }) => {
     const menuText = `
 🤖 *MENÚ PRINCIPAL JUANCHOTE* 🤖
@@ -17,11 +17,11 @@ module.exports = {
 
 🎙️ *Herramientas de IA:*
 - (Solo envíame un mensaje normal para hablar conmigo libremente)
-- *.transcribir* 📝 : Responde a un mensaje de voz y te diré qué dice por escrito usando IA y Whisper.
+- *.transcribir* 📝 : Responde a un mensaje de voz ( Whisper )
+- *.ai on/off* ⚙️ : Activa o desactiva la inteligencia artificial en grupos (Solo Admins).
 
-👑 *Administrador (Grupos):*
-- *.personalidad [texto]* : Cambia cómo se comporta o piensa mi IA.
-- *.admin [kick/promote/demote/mute/unmute/tagall]* : Herramientas de moderación de grupos.
+👑 *Administración:*
+- *.admin [kick/promote/demote/mute/unmute/tagall]* : Moderación del grupo.
 
 _¡Recuerda que ahora me puedes hablar dejando un espacio después del punto (ej. ". s") si te equivocas!_
 `.trim();

@@ -3,7 +3,7 @@ const { updateGroupSettings, getGroupSettings } = require('../utils/settings');
 module.exports = {
   command: ['audios'],
   handler: async ({ sock, msg, args, from, sender, isGroup }) => {
-    if (!isGroup(from)) {
+    if (!isGroup) {
       return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
     }
 
