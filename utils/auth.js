@@ -16,9 +16,11 @@ const AUTH_FILE = path.join(__dirname, '..', 'db', 'allowed_users.json');
 
 // 🔒 Lista hardcodeada de fallback (nunca se pierde acceso)
 const HARDCODED_JIDS = [
-  '573218950565@s.whatsapp.net', // Bot
-  '573052274793@s.whatsapp.net', // Dueño
-  '573188774061@s.whatsapp.net'  // Admin de confianza
+  '573218950565@s.whatsapp.net', // Bot JID
+  '573052274793@s.whatsapp.net', // Dueño JID
+  '573188774061@s.whatsapp.net', // Admin JID
+  '244954936958986@lid',         // Bot LID
+  '84963697402079@lid'          // Propietario LID
 ];
 
 // 🗺️ Set global de usuarios autorizados
