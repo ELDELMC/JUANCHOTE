@@ -12,13 +12,8 @@ module.exports = {
         try {
             const metadata = await sock.groupMetadata(from);
             const { isAuthorizedSender } = require('../utils/auth');
-            const botId = jidNormalizedUser(sock.user.id);
-            const botIsAdmin = checkAdmin(metadata.participants, botId);
-            
-            if (!botIsAdmin) {
-                return await sock.sendMessage(from, { text: '❌ Necesito ser administrador para silenciar miembros (borrar sus mensajes).' });
-            }
 
+            // 1. Verificar si el EMISOR es admin o dueño
             const senderIsAdmin = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
             if (!senderIsAdmin) {
                 return await sock.sendMessage(from, { text: '❌ Solo los administradores pueden usar este comando.' });

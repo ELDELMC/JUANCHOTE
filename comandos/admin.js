@@ -13,19 +13,8 @@ module.exports = {
     try {
       const metadata = await sock.groupMetadata(from);
 
-      // 1. BOT ADMIN
-      const botId = jidNormalizedUser(sock.user.id);
-      const botIsAdmin = checkAdmin(metadata.participants, botId);
-
-      if (!botIsAdmin) {
-        return await sock.sendMessage(from, {
-          text: '❌ El bot no es administrador del grupo y no puede realizar acciones.'
-        });
-      }
-
-      // 2. USUARIO ADMIN / DUEÑO
+      // 1. Verificar si el EMISOR es admin o dueño
       const isAdmin = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
-
       if (!isAdmin) {
         return await sock.sendMessage(from, {
           text: '❌ Solo los administradores pueden usar este comando.'
