@@ -69,21 +69,21 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
     const botParticipant = metadata.participants.find(p => {
         const normJid = jidNormalizedUser(p.id);
         if (normJid === botJid) {
-            console.log(`🔍 [DEBUG ADMIN] ¡Bot encontrado en participantes! Rango actual: ${p.admin}`);
             return true;
         }
         return false;
     });
     
-    if (!botParticipant) {
-        console.log(`❌ [DEBUG ADMIN] El bot no se encontró en la lista de participantes. Participantes:`);
-        console.dir(metadata.participants.map(p => ({id: p.id, norm: jidNormalizedUser(p.id), admin: p.admin})), { depth: null });
-    }
-
-    if (!botParticipant?.admin) {
-      console.log(`❌ [DEBUG ADMIN] Fallo en la verificación. botParticipant: ${JSON.stringify(botParticipant)}`);
+    // Si encontramos al bot y NO es admin, rechazamos
+    if (botParticipant && !botParticipant.admin) {
+      console.log(`❌ [DEBUG ADMIN] Bot encontrado pero sin admin.`);
       await sendStyledMessage(sock, groupJid, "𝙴𝚛𝚛𝚘𝚛 𝚍𝚎 𝙿𝚎𝚛𝚖𝚒𝚜𝚘𝚜", "Necesito ser administrador de este grupo para agregar miembros.");
       return;
+    }
+    
+    // Si no lo encontramos (por privacidad LID), asumimos que sí puede e intentamos.
+    if (!botParticipant) {
+       console.log(`⚠️ [DEBUG ADMIN] Bot no encontrado en la lista (IDs LID). Saltando pre-verificación de admin...`);
     }
 
     // 2. Cargar la base de datos
@@ -134,13 +134,13 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
       const jidToAdd = toAdd[i];
       const number = jidToAdd.split('@')[0];
 
-      try {
-        // Verificar si el bot sigue siendo admin
+        try {
+        // Verificar si el bot sigue siendo admin cada 15 agregados
         if (i > 0 && i % 15 === 0) {
           const checkMeta = await sock.groupMetadata(groupJid);
           const stillAdmin = checkMeta.participants.find(p => jidNormalizedUser(p.id) === botJid);
-          if (!stillAdmin?.admin) {
-            console.log(`🚨 [INVOCADOR] Bot perdió admin en ${groupJid}. Deteniendo.`);
+          if (stillAdmin && !stillAdmin.admin) {
+            console.log(`🚨 [INVOCADOR] Bot perdió admin visible en ${groupJid}. Deteniendo.`);
             await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚌𝚎𝚜𝚘 𝙳𝚎𝚝𝚎𝚗𝚒𝚍𝚘", "El bot ya no es administrador.");
             currentInvoProcess.delete(groupJid);
             return;
@@ -168,13 +168,21 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
 
       } catch (err) {
         state.failed++;
-        const statusCode = err?.output?.statusCode || err?.data || 'desconocido';
+        const statusCode = err?.output?.statusCode || err?.data || err?.status || 'desconocido';
         console.error(`❌ [INVOCADOR] Error agregando ${number}: ${statusCode}`);
 
-        // Si es error 403, 429 o rate limit → pausa de 10 minutos
-        if (statusCode === 403 || statusCode === 429 || String(err).includes('rate')) {
+        // Error de permisos reales a la hora de la acción
+        if (statusCode === 403) {
+            console.log(`🚨 [INVOCADOR] WhatsApp retornó 403 Forbidden. El bot no tiene permisos.`);
+            await sendStyledMessage(sock, groupJid, "𝙴𝚛𝚛𝚘𝚛 𝚍𝚎 𝙿𝚎𝚛𝚖𝚒𝚜𝚘𝚜", "WhatsApp no me permite agregar miembros. Posiblemente no tenga rango de administrador.");
+            currentInvoProcess.delete(groupJid);
+            return; // Terminar el proceso
+        }
+
+        // Rate limit
+        if (statusCode === 429 || String(err).includes('rate')) {
           console.log(`⏸️ [INVOCADOR] Rate limit detectado. Pausa de 10 minutos...`);
-          await sendStyledMessage(sock, groupJid, "𝙿𝚊𝚞𝚜𝚊 𝚍𝚎 𝚂𝚎𝚐𝚞𝚛𝚒𝚍𝚊𝚍", `Pausa de 10 min por rate limit en ${number}...`);
+          await sendStyledMessage(sock, groupJid, "𝙿𝚊𝚞𝚜𝚊 𝚍𝚎 𝚂𝚎𝚐𝚞𝚛𝚒𝚍𝚊𝚍", `Pausa de 10 min por límite de velocidad en ${number}...`);
           await sleep(600000); // 10 minutos
         }
       }
