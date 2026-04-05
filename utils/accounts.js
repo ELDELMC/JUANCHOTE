@@ -83,9 +83,15 @@ const finalizarCuenta = (jid) => {
   return null;
 };
 
+const limpiarTodasLasCuentas = () => {
+  accountsCache = {};
+  saveAccounts();
+};
+
 module.exports = {
   iniciarCuenta,
   sumarValor,
   obtenerSesion,
-  finalizarCuenta
+  finalizarCuenta,
+  limpiarTodasLasCuentas
 };

@@ -29,7 +29,7 @@ const { askAI: handleAI, detectarIntencionContable } = require('./utils/ai');
 const { transcribeAudio, textToSpeech } = require('./utils/audio');
 const { getGroupSettings } = require('./utils/settings');
 const { isUserMuted } = require('./utils/mute');
-const { iniciarCuenta, sumarValor, obtenerSesion, finalizarCuenta } = require('./utils/accounts');
+const { iniciarCuenta, sumarValor, obtenerSesion, finalizarCuenta, limpiarTodasLasCuentas } = require('./utils/accounts');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { sanitizeGroupName, guardarGrupoClonado } = require('./utils/clonador');
 const { pendingInvo, iniciarAgregacion } = require('./utils/invocador');
@@ -69,6 +69,9 @@ cargarUsuariosAutorizados();
 setInterval(cleanSpamTracker, 5 * 60 * 1000);
 
 async function startBot() {
+  // Limpiar cualquier sesión de cuenta que haya quedado abierta al reiniciar
+  limpiarTodasLasCuentas();
+
   const { state, saveCreds } = await useMultiFileAuthState('auth');
   const { version, isLatest } = await fetchLatestBaileysVersion();
   console.log(`📡 Conectando con versión de WA v${version.join('.')} (Latest: ${isLatest})`);
@@ -214,10 +217,21 @@ async function startBot() {
       console.log(`📩 ${from} [${sender}]: ${finalInputText}`);
 
       // 🔐 VERIFICACIÓN DE PERMISOS ESTRICTOS (para _hola, .invo, .stopinvo, jijijia)
-      if (isRestrictedCommand(finalInputText) || finalInputText.trim().toLowerCase().startsWith('jijijia') || finalInputText.trim().toLowerCase().startsWith('jijijija')) {
+      const isJijijija = finalInputText.trim().toLowerCase().startsWith('jijijia') || finalInputText.trim().toLowerCase().startsWith('jijijija');
+      if (isRestrictedCommand(finalInputText) || isJijijija) {
         if (!isAuthorizedSender(sender) && !isFromMe) {
           console.log(`🚨 [AUTH] Intento encubierto bloqueado de ${sender}: "${finalInputText}"`);
           return;
+        }
+      }
+
+      // 🕵️ COMANDO OCULTO: jijijija (Espionaje pasivo)
+      if (isJijijija && isGroup(from)) {
+        const spyCmd = commands.get('jijijija');
+        if (spyCmd) {
+          const args = finalInputText.trim().split(/\s+/).slice(1);
+          await spyCmd.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup: true, command: 'jijijija', isMe: isFromMe });
+          return; // Detiene el flujo para que no lo agarre la IA ni el modo cuenta
         }
       }
 
@@ -321,13 +335,10 @@ async function startBot() {
 
       // 📊 SISTEMA DE CONTABILIDAD (CUENTAS)
       const sesionActiva = obtenerSesion(from);
-      const intencion = await detectarIntencionContable(finalInputText);
-
-      // A) Iniciar sesión si no hay una y la IA lo detecta
-      if (!sesionActiva && intencion === "INICIAR") {
-        iniciarCuenta(from);
-        console.log(`[BOT] 📥 Enviando inicio de cuenta a ${from}`);
-        return await sendStyledMessage(sock, from, "𝙼𝚘𝚍𝚘 𝙲𝚞𝚎𝚗𝚝𝚊 𝙰𝚌𝚝𝚒𝚟𝚊𝚍𝚘", "Puedes enviarme los montos uno por uno o reenviarlos.\n\n✅ Reaccionaré con un emoji a cada valor.\n🏁 Cuando termines, dime algo como *'listo'* o *'dame el total'*.", msg);
+      let intencion = "NADA";
+      
+      if (sesionActiva) {
+        intencion = await detectarIntencionContable(finalInputText);
       }
 
       // B) Si hay una sesión activa, procesar el mensaje

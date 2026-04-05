@@ -1,12 +1,23 @@
 const { iniciarCuenta, finalizarCuenta, obtenerSesion } = require('../utils/accounts');
+const { getIsAdmin } = require('../utils/helpers');
+const { isAuthorizedSender } = require('../utils/auth');
 
 module.exports = {
   command: ['cuenta', 'contabilidad'],
-  handler: async ({ sock, msg, args, from }) => {
+  handler: async ({ sock, msg, args, from, sender, isGroup, isMe }) => {
     const action = (args[0] || '').toLowerCase();
     const sesionActiva = obtenerSesion(from);
 
     if (action === 'on' || action === 'activar' || action === 'iniciar') {
+      let isAdminUser = true;
+      if (isGroup) {
+        isAdminUser = await getIsAdmin(sock, from, sender) || isAuthorizedSender(sender) || isMe;
+      }
+
+      if (!isAdminUser) {
+        return await sock.sendMessage(from, { text: '⛔ Solo los administradores pueden activar el modo cuenta.' });
+      }
+
       if (sesionActiva) {
         return await sock.sendMessage(from, { text: '⚠️ Ya hay una sesión de cuenta activa en este chat.' });
       }
