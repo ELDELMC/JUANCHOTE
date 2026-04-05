@@ -11,16 +11,16 @@ module.exports = {
 
         try {
             const metadata = await sock.groupMetadata(from);
-            const botId = sock.user.id;
+            const { isAuthorizedSender } = require('../utils/auth');
+            const botId = jidNormalizedUser(sock.user.id);
             const botIsAdmin = checkAdmin(metadata.participants, botId);
             
             if (!botIsAdmin) {
                 return await sock.sendMessage(from, { text: '❌ Necesito ser administrador para silenciar miembros (borrar sus mensajes).' });
             }
 
-            const senderIsAdmin = checkAdmin(metadata.participants, sender) || isMe;
+            const senderIsAdmin = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
             if (!senderIsAdmin) {
-                console.log(`⛔ Admin check falló para ${sender}. Admins:`, metadata.participants.filter(p => p.admin).map(p => p.id));
                 return await sock.sendMessage(from, { text: '❌ Solo los administradores pueden usar este comando.' });
             }
 

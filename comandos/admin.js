@@ -1,5 +1,6 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { checkAdmin } = require('../utils/helpers');
+const { isAuthorizedSender } = require('../utils/auth');
 
 module.exports = {
   command: 'admin',
@@ -12,22 +13,22 @@ module.exports = {
     try {
       const metadata = await sock.groupMetadata(from);
 
-      // BOT ADMIN
-      const botId = sock.user.id;
+      // 1. BOT ADMIN
+      const botId = jidNormalizedUser(sock.user.id);
       const botIsAdmin = checkAdmin(metadata.participants, botId);
 
       if (!botIsAdmin) {
         return await sock.sendMessage(from, {
-          text: '❌ El bot no es administrador.'
+          text: '❌ El bot no es administrador del grupo y no puede realizar acciones.'
         });
       }
 
-      // USUARIO ADMIN
-      const isAdmin = checkAdmin(metadata.participants, sender) || isMe;
+      // 2. USUARIO ADMIN / DUEÑO
+      const isAdmin = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
 
       if (!isAdmin) {
         return await sock.sendMessage(from, {
-          text: '❌ Solo admins pueden usar esto.'
+          text: '❌ Solo los administradores pueden usar este comando.'
         });
       }
 
@@ -47,61 +48,56 @@ module.exports = {
       // ==================== COMANDOS ====================
 
       if (subCommand === 'kick') {
-        if (!target) return await sock.sendMessage(from, { text: '❌ Etiqueta o responde.' });
-
+        if (!target) return await sock.sendMessage(from, { text: '❌ Etiqueta o responde a alguien.' });
         await sock.groupParticipantsUpdate(from, [target], 'remove');
         await sock.sendMessage(from, { text: '✅ Usuario expulsado.' });
       }
 
       else if (subCommand === 'promote') {
-        if (!target) return await sock.sendMessage(from, { text: '❌ Etiqueta o responde.' });
-
+        if (!target) return await sock.sendMessage(from, { text: '❌ Etiqueta o responde a alguien.' });
         await sock.groupParticipantsUpdate(from, [target], 'promote');
         await sock.sendMessage(from, { text: '✅ Ahora es admin.' });
       }
 
       else if (subCommand === 'demote') {
-        if (!target) return await sock.sendMessage(from, { text: '❌ Etiqueta o responde.' });
-
+        if (!target) return await sock.sendMessage(from, { text: '❌ Etiqueta o responde a alguien.' });
         await sock.groupParticipantsUpdate(from, [target], 'demote');
         await sock.sendMessage(from, { text: '✅ Ya no es admin.' });
       }
 
       else if (subCommand === 'mute') {
         await sock.groupSettingUpdate(from, 'announcement');
-        await sock.sendMessage(from, { text: '🔇 Grupo silenciado.' });
+        await sock.sendMessage(from, { text: '🔇 Grupo silenciado (solo admins envían mensajes).' });
       }
 
       else if (subCommand === 'unmute') {
         await sock.groupSettingUpdate(from, 'not_announcement');
-        await sock.sendMessage(from, { text: '🔊 Grupo abierto.' });
+        await sock.sendMessage(from, { text: '🔊 Grupo abierto (todos envían mensajes).' });
       }
 
       else if (subCommand === 'tagall') {
         const mentions = metadata.participants.map(p => p.id);
-
         await sock.sendMessage(from, {
-          text: '📢 Atención todos',
+          text: '📢 *¡Atención a todos los miembros!*',
           mentions
         });
       }
 
       else {
         await sock.sendMessage(from, {
-          text: `⚙️ Comandos admin:
-
-.admin kick
-.admin promote
-.admin demote
-.admin mute
-.admin unmute
-.admin tagall`
+          text: `⚙️ *Comandos de Administración:*
+\n.admin kick (expulsar)
+.admin promote (dar admin)
+.admin demote (quitar admin)
+.admin mute (cerrar grupo)
+.admin unmute (abrir grupo)
+.admin tagall (mencionar a todos)`
         });
       }
 
     } catch (err) {
-      console.error(err);
-      await sock.sendMessage(from, { text: '❌ Error en admin.' });
+      console.error('Error en admin:', err);
+      await sock.sendMessage(from, { text: '❌ Ocurrió un error al ejecutar la acción de administrador.' });
     }
   }
 };

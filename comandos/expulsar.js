@@ -1,5 +1,6 @@
 const { checkAdmin } = require('../utils/helpers');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { isAuthorizedSender } = require('../utils/auth');
 
 module.exports = {
   command: ['expulsar', 'kick', 'sacar', 'ban'],
@@ -8,8 +9,17 @@ module.exports = {
 
     try {
       const metadata = await sock.groupMetadata(from);
-      const isAdmin = checkAdmin(metadata.participants, sender) || isMe;
-      if (!isAdmin) return await sock.sendMessage(from, { text: '❌ Solo admins.' });
+      
+      // 1. Verificar si el BOT es admin
+      const botId = jidNormalizedUser(sock.user.id);
+      const botIsAdmin = checkAdmin(metadata.participants, botId);
+      if (!botIsAdmin) {
+        return await sock.sendMessage(from, { text: '❌ El bot necesita ser administrador para expulsar miembros.' });
+      }
+
+      // 2. Verificar si el EMISOR es admin o dueño
+      const isAdmin = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
+      if (!isAdmin) return await sock.sendMessage(from, { text: '❌ Solo los administradores pueden usar este comando.' });
 
       let target = null;
       if (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length > 0) {
@@ -28,8 +38,8 @@ module.exports = {
       await sock.groupParticipantsUpdate(from, [targetNormalized], "remove");
       await sock.sendMessage(from, { text: `✅ Se ha expulsado a @${targetNormalized.split('@')[0]}`, mentions: [targetNormalized] });
     } catch (e) {
-      console.error(e);
-      await sock.sendMessage(from, { text: '❌ Error: ¿Soy admin?' });
+      console.error('Error en expulsar:', e);
+      await sock.sendMessage(from, { text: '❌ Ocurrió un error al intentar expulsar al usuario.' });
     }
   }
 };
