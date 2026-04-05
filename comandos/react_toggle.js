@@ -5,16 +5,14 @@ module.exports = {
   command: ['react', 'reaccion', 'reacciones'],
   handler: async ({ sock, from, sender, args, isGroup, isMe }) => {
     try {
-      // Verificar permisos: Admin o el Bot mismo
-      let isAdmin = isMe;
+      const { isAuthorizedSender } = require('../utils/auth');
+      
+      // Verificar permisos: Admin, Bot o Dueño Autorizado
+      let isAdmin = isMe || isAuthorizedSender(sender);
+      
       if (isGroup && !isAdmin) {
         const metadata = await sock.groupMetadata(from);
         isAdmin = checkAdmin(metadata.participants, sender);
-      } else if (!isGroup) {
-        // En privados, solo el bot o el dueño pueden cambiarlo (isMe ya cubre al bot)
-        // Por ahora permitimos que cualquiera lo cambie en SU propio privado si quiere,
-        // pero lo ideal es que sea el bot/dueño.
-        isAdmin = isMe; 
       }
 
       if (!isAdmin) {

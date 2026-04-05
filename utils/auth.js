@@ -11,6 +11,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { matchPrefix } = require('./helpers');
 
 const AUTH_FILE = path.join(__dirname, '..', 'db', 'allowed_users.json');
 
@@ -71,8 +72,7 @@ async function cargarUsuariosAutorizados() {
  */
 function isAuthorizedSender(jid) {
   if (!jid) return false;
-  // Normalizar: si no tiene @, agregar @s.whatsapp.net
-  const normalized = jid.includes('@') ? jidNormalizedUser(jid) : `${jid}@s.whatsapp.net`;
+  const normalized = jidNormalizedUser(jid);
   return allowedUsers.has(normalized);
 }
 
@@ -99,9 +99,10 @@ function isRestrictedCommand(text) {
   if (lower === '_hola') return true;
   
   // Comandos con prefijo: extraer el nombre
-  const prefixMatch = lower.match(/^[.,!¡]\s?(.+)/);
+  const prefixMatch = matchPrefix(lower);
   if (prefixMatch) {
-    const cmdName = prefixMatch[1].split(/\s+/)[0];
+    const bodyContent = lower.slice(prefixMatch[0].length).trim();
+    const cmdName = bodyContent.split(/\s+/)[0];
     return RESTRICTED_COMMANDS.includes(cmdName);
   }
   

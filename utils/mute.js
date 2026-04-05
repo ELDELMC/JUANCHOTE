@@ -3,19 +3,30 @@ const path = require('path');
 
 const MUTED_FILE = path.join(__dirname, '../data/muted.json');
 
-// Cargar datos iniciales
-let mutedUsers = {};
-if (fs.existsSync(MUTED_FILE)) {
-    try {
-        mutedUsers = JSON.parse(fs.readFileSync(MUTED_FILE, 'utf-8'));
-    } catch (e) {
-        console.error("Error cargando muted.json:", e);
+// Memory Cache
+let mutedUsers = null;
+
+function loadMuted() {
+    if (mutedUsers) return mutedUsers;
+    
+    if (fs.existsSync(MUTED_FILE)) {
+        try {
+            mutedUsers = JSON.parse(fs.readFileSync(MUTED_FILE, 'utf-8'));
+        } catch (e) {
+            console.error("❌ Error cargando muted.json:", e);
+            mutedUsers = {};
+        }
+    } else {
         mutedUsers = {};
     }
+    return mutedUsers;
 }
 
 function saveMuted() {
-    fs.writeFileSync(MUTED_FILE, JSON.stringify(mutedUsers, null, 2));
+    if (!mutedUsers) return;
+    fs.writeFile(MUTED_FILE, JSON.stringify(mutedUsers, null, 2), (err) => {
+        if (err) console.error("❌ Error al guardar asíncronamente en muted.json:", err);
+    });
 }
 
 /**
@@ -48,8 +59,9 @@ function parseDuration(durationStr) {
  * Mutea a un usuario en un grupo específico.
  */
 function muteUser(groupId, userId, expiration) {
-    if (!mutedUsers[groupId]) mutedUsers[groupId] = {};
-    mutedUsers[groupId][userId] = expiration;
+    const muted = loadMuted();
+    if (!muted[groupId]) muted[groupId] = {};
+    muted[groupId][userId] = expiration;
     saveMuted();
 }
 
@@ -57,9 +69,10 @@ function muteUser(groupId, userId, expiration) {
  * Desmutea a un usuario.
  */
 function unmuteUser(groupId, userId) {
-    if (mutedUsers[groupId] && mutedUsers[groupId][userId]) {
-        delete mutedUsers[groupId][userId];
-        if (Object.keys(mutedUsers[groupId]).length === 0) delete mutedUsers[groupId];
+    const muted = loadMuted();
+    if (muted[groupId] && muted[groupId][userId]) {
+        delete muted[groupId][userId];
+        if (Object.keys(muted[groupId]).length === 0) delete muted[groupId];
         saveMuted();
     }
 }
@@ -68,9 +81,10 @@ function unmuteUser(groupId, userId) {
  * Verifica si un usuario está silenciado. Limpia expirados automáticamente.
  */
 function isUserMuted(groupId, userId) {
-    if (!mutedUsers[groupId] || !mutedUsers[groupId][userId]) return false;
+    const muted = loadMuted();
+    if (!muted[groupId] || !muted[groupId][userId]) return false;
 
-    const expiration = mutedUsers[groupId][userId];
+    const expiration = muted[groupId][userId];
     if (Date.now() > expiration) {
         unmuteUser(groupId, userId);
         return false;

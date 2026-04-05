@@ -17,19 +17,14 @@ module.exports = {
       return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
     }
 
-    // Verificar que el bot sea admin
+    // Verificar permisos
     try {
       const metadata = await sock.groupMetadata(from);
-      const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-      const botJid = jidNormalizedUser(sock.user.id);
-      const botP = metadata.participants.find(p => jidNormalizedUser(p.id) === botJid);
+      const { isAuthorizedSender } = require('../utils/auth');
       
-      if (!botP?.admin) {
-        return await sock.sendMessage(from, { text: '❌ Necesito ser *admin* de este grupo para agregar miembros.' });
-      }
-
-      // Verificar que el usuario sea admin
-      if (!checkAdmin(metadata.participants, sender) && !isMe) {
+      // 1. Verificar si el EMISOR es admin o dueño
+      const isAdminCheck = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
+      if (!isAdminCheck) {
         return await sock.sendMessage(from, { text: '❌ Solo los administradores pueden usar este comando.' });
       }
     } catch (e) {

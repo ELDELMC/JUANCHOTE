@@ -22,7 +22,7 @@ module.exports = {
       let modelUsed = provider.model || "(Gemini Default)";
 
       try {
-        await callProvider(provider, testPrompt, false);
+        await callApi(provider, "Eres un asistente de diagnóstico.", testPrompt);
         time = Date.now() - start;
       } catch (error) {
         status = "❌";

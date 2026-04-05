@@ -55,4 +55,11 @@ async function getIsAdmin(sock, from, jid) {
     }
 }
 
-module.exports = { getText, isGroup, normalizeString, checkAdmin, getIsAdmin };
+const PREFIX_REGEX = /^[.!]\s?/i;
+
+function matchPrefix(text) {
+  if (!text) return null;
+  return text.match(PREFIX_REGEX);
+}
+
+module.exports = { getText, isGroup, normalizeString, checkAdmin, getIsAdmin, PREFIX_REGEX, matchPrefix };

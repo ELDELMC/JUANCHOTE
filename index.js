@@ -23,7 +23,7 @@ process.on('uncaughtException', (err) => {
     console.error('💥 EXCEPCIÓN NO CAPTURADA:', err);
 });
 
-const { getText, normalizeString, checkAdmin, isGroup, getIsAdmin } = require('./utils/helpers');
+const { getText, normalizeString, checkAdmin, isGroup, getIsAdmin, matchPrefix } = require('./utils/helpers');
 const { hasPermission } = require('./utils/permissions');
 const { askAI: handleAI, detectarIntencionContable } = require('./utils/ai');
 const { transcribeAudio, textToSpeech } = require('./utils/audio');
@@ -34,6 +34,8 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { sanitizeGroupName, guardarGrupoClonado } = require('./utils/clonador');
 const { pendingInvo, iniciarAgregacion } = require('./utils/invocador');
 const { cargarUsuariosAutorizados, isAuthorizedSender, isRestrictedCommand } = require('./utils/auth');
+const { handleModeration, cleanSpamTracker } = require('./utils/moderation');
+const { handleGroupParticipantsUpdate } = require('./utils/groupEvents');
 
 const fs = require('fs');
 const path = require('path');
@@ -60,6 +62,9 @@ let botStartTime = Date.now();
 
 // 🔐 Cargar permisos autorizados al inicio
 cargarUsuariosAutorizados();
+
+// 🧹 Limpieza periódica de memoria (Anti-Spam) cada 5 minutos
+setInterval(cleanSpamTracker, 5 * 60 * 1000);
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth');
@@ -163,41 +168,10 @@ async function startBot() {
       let finalInputText = text;
       let isVoice = false;
 
-      // 🎤 Interceptar y procesar audios
-      // 🛡️ MODERACIÓN: Antilink y Antispam
+      // 🛡️ MODERACIÓN: Antilink y Antispam (Middleware externo)
       if (isGroup(from)) {
-          const settings = getGroupSettings(from);
-          const isAdmin = await getIsAdmin(sock, from, sender);
-          
-          // 🛑 Antilink
-          if (settings.antilink && !isAdmin) {
-              const urlRegex = /https?:\/\/(chat\.whatsapp\.com\/[^\s]+|whatsapp\.com\/[^\s]+)/gi;
-              if (text.match(urlRegex)) {
-                  console.log(`🚫 Enlace detectado de ${sender}. Eliminando...`);
-                  await sock.sendMessage(from, { delete: msg.key });
-                  return await sock.sendMessage(from, { text: `⚠️ @_@ ${sender.split('@')[0]}, los enlaces están prohibidos aquí.` }, { mentions: [sender] });
-              }
-          }
-          
-          // 🛑 Antispam
-          if (settings.antispam && !isAdmin) {
-              // (Lógica simple de 5 mensajes en 1 minuto)
-              if (!global.spamTracker) global.spamTracker = {};
-              if (!global.spamTracker[from]) global.spamTracker[from] = {};
-              
-              const now = Date.now();
-              const userLog = global.spamTracker[from][sender] || [];
-              const recentMsgs = userLog.filter(ts => now - ts < 60000);
-              
-              recentMsgs.push(now);
-              global.spamTracker[from][sender] = recentMsgs;
-              
-              if (recentMsgs.length > 5) {
-                  console.log(`🚫 Spam detectado de ${sender}.`);
-                  await sock.sendMessage(from, { delete: msg.key });
-                  return;
-              }
-          }
+          const handled = await handleModeration(sock, from, sender, msg, text);
+          if (handled) return;
       }
 
       const audioMessage = msg.message?.audioMessage;
@@ -282,17 +256,16 @@ async function startBot() {
         }
       }
 
-      // 🎯 COMANDOS CON PREFIJOS FLEXIBLES (. , ! + espacio opcional)
-      const prefixRegex = /^[.,!]\s?/i;
-      const matchPrefix = finalInputText.match(prefixRegex);
+      // 🎯 COMANDOS CON PREFIJOS FLEXIBLES (. , ! ¡ + espacio opcional)
+      const matchPrefixData = matchPrefix(finalInputText);
 
-      if (matchPrefix) {
-        const bodyContent = finalInputText.slice(matchPrefix[0].length).trim();
+      if (matchPrefixData) {
+        const bodyContent = finalInputText.slice(matchPrefixData[0].length).trim();
         if (bodyContent) {
           const [commandName, ...args] = bodyContent.split(/\s+/);
           const commandNormalized = normalizeString(commandName); 
           
-          console.log(`⚡ Ejecutando comando: ${commandNormalized} con prefijo '${matchPrefix[0].trim()}'`);
+          console.log(`⚡ Ejecutando comando: ${commandNormalized} con prefijo '${matchPrefixData[0].trim()}'`);
 
           const cmdModule = commands.get(commandNormalized);
 
@@ -380,18 +353,20 @@ async function startBot() {
         }
         
         // --- 3. Prevención de IA General ---
-        // Si no es un comando (prefijo . , !), entonces detenemos aquí para que no responda como "agente virtual"
-        // Si no es un comando (prefijo . , ! , ¡), entonces detenemos aquí para que no responda como "agente virtual"
-        const prefixRegex = /^[.,!¡]\s?/i;
-        if (!finalInputText.match(prefixRegex)) {
+        if (!matchPrefix(finalInputText)) {
             console.log(`[BOT] 💤 Modo cuenta: ignorando texto no contable para no activar la IA general.`);
             return; 
         }
       }
 
-      // ✅ Reaccionar automáticamente (si está activado en los ajustes)
+      // ✅ Reaccionar automáticamente
+      const isGroupChat = isGroup(from);
       const currentSettings = getGroupSettings(from);
-      if (currentSettings.react_activada && !sesionActiva) {
+      
+      // En DM (privado) siempre react, en Grupo solo si está activado
+      const shouldReact = !isGroupChat || (currentSettings.react_activada);
+
+      if (shouldReact && !sesionActiva) {
          setTimeout(async () => {
            try {
              console.log(`[BOT] ✅ Auto-reacción en ${from}`);
@@ -408,9 +383,8 @@ async function startBot() {
       }
 
       // 🤖 IA
-      if (isGroup(from)) {
-          const settings = getGroupSettings(from);
-          if (!settings.ai_activada) {
+      if (isGroupChat) {
+          if (!currentSettings.ai_activada) {
               console.log('🔇 IA desactivada por configuración en este grupo.');
               return;
           }
@@ -457,33 +431,9 @@ async function startBot() {
     }
   });
 
-  // 🚪 Bienvenida y Despedida
+  // 🚪 Bienvenida y Despedida (Middleware externo)
   sock.ev.on('group-participants.update', async (anu) => {
-    try {
-      const { id, participants, action } = anu;
-      const settings = getGroupSettings(id);
-      const metadata = await sock.groupMetadata(id);
-      
-      for (const num of participants) {
-        if (action === 'add' && settings.bienvenida) {
-          let welcomeMsg = settings.bienvenida
-            .replace(/@user/g, `@${num.split('@')[0]}`)
-            .replace(/@groupname/g, metadata.subject);
-          
-          await sock.sendMessage(id, { text: welcomeMsg, mentions: [num] });
-        }
-        
-        if (action === 'remove' && settings.despedida) {
-          let goodbyeMsg = settings.despedida
-            .replace(/@user/g, `@${num.split('@')[0]}`)
-            .replace(/@groupname/g, metadata.subject);
-            
-          await sock.sendMessage(id, { text: goodbyeMsg, mentions: [num] });
-        }
-      }
-    } catch (err) {
-      console.error('❌ Error en group-participants.update:', err);
-    }
+    await handleGroupParticipantsUpdate(sock, anu);
   });
 }
 

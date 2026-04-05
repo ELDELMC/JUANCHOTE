@@ -7,9 +7,10 @@ module.exports = {
 
     try {
       const metadata = await sock.groupMetadata(from);
-      const isAdmin = checkAdmin(metadata.participants, sender) || isMe;
+      const { isAuthorizedSender } = require('../utils/auth');
+      const isAdmin = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
       
-      // Limitar !todos a admins para evitar spam (opcional, usuario lo sugirió)
+      // Limitar !todos a admins para evitar spam
       if (!isAdmin) return await sock.sendMessage(from, { text: '❌ Solo los administradores pueden convocar a todos.' });
 
       const text = args.join(' ') || '¡Atención a todos!';

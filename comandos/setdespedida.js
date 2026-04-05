@@ -8,7 +8,8 @@ module.exports = {
 
     try {
       const metadata = await sock.groupMetadata(from);
-      const isAdmin = checkAdmin(metadata.participants, sender) || isMe;
+      const { isAuthorizedSender } = require('../utils/auth');
+      const isAdmin = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
       if (!isAdmin) return await sock.sendMessage(from, { text: '❌ Solo admins.' });
 
       const text = args.join(' ');

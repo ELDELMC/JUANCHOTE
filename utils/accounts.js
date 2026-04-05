@@ -3,24 +3,45 @@ const path = require('path');
 
 const filePath = path.join(__dirname, '..', 'data', 'accounts.json');
 
-// Asegurar que el archivo existe
-if (!fs.existsSync(path.dirname(filePath))) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-}
-if (!fs.existsSync(filePath)) {
-  fs.writeFileSync(filePath, JSON.stringify({}));
+// Cache in memory
+let accountsCache = null;
+
+// Ensure directory exists
+const dir = path.dirname(filePath);
+if (!fs.existsSync(dir)) {
+  fs.mkdirSync(dir, { recursive: true });
 }
 
+/**
+ * Load accounts from disk (only once or if cache is null)
+ */
 const loadAccounts = () => {
+  if (accountsCache) return accountsCache;
+  
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    if (!fs.existsSync(filePath)) {
+      accountsCache = {};
+      fs.writeFileSync(filePath, JSON.stringify({}));
+    } else {
+      accountsCache = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    }
   } catch (e) {
-    return {};
+    console.error("❌ Error cargando accounts.json:", e);
+    accountsCache = {};
   }
+  return accountsCache;
 };
 
-const saveAccounts = (data) => {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+/**
+ * Save accounts to disk asynchronously
+ */
+const saveAccounts = () => {
+  if (!accountsCache) return;
+  
+  // Use non-blocking write
+  fs.writeFile(filePath, JSON.stringify(accountsCache, null, 2), (err) => {
+    if (err) console.error("❌ Error al guardar asíncronamente en accounts.json:", err);
+  });
 };
 
 const iniciarCuenta = (jid) => {
@@ -31,7 +52,7 @@ const iniciarCuenta = (jid) => {
     entries: [],
     startTime: Date.now()
   };
-  saveAccounts(accounts);
+  saveAccounts();
   return accounts[jid];
 };
 
@@ -40,7 +61,7 @@ const sumarValor = (jid, valor) => {
   if (accounts[jid] && accounts[jid].active) {
     accounts[jid].total += valor;
     accounts[jid].entries.push(valor);
-    saveAccounts(accounts);
+    saveAccounts();
     return true;
   }
   return false;
@@ -54,9 +75,9 @@ const obtenerSesion = (jid) => {
 const finalizarCuenta = (jid) => {
   const accounts = loadAccounts();
   if (accounts[jid]) {
-    const data = accounts[jid];
+    const data = { ...accounts[jid] }; // Clone to return
     delete accounts[jid];
-    saveAccounts(accounts);
+    saveAccounts();
     return data;
   }
   return null;
