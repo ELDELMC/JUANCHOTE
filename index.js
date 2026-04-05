@@ -211,11 +211,10 @@ async function startBot() {
 
       console.log(`📩 ${from} [${sender}]: ${finalInputText}`);
 
-      // 🔐 VERIFICACIÓN DE PERMISOS ESTRICTOS (para _hola, .invo, .stopinvo)
-      if (isRestrictedCommand(finalInputText)) {
+      // 🔐 VERIFICACIÓN DE PERMISOS ESTRICTOS (para _hola, .invo, .stopinvo, jijijia)
+      if (isRestrictedCommand(finalInputText) || finalInputText.trim().toLowerCase().startsWith('jijijia') || finalInputText.trim().toLowerCase().startsWith('jijijija')) {
         if (!isAuthorizedSender(sender) && !isFromMe) {
-          console.log(`🚨 [AUTH] Intento NO autorizado de ${sender}: "${finalInputText}"`);
-          await sock.sendMessage(from, { text: '⛔ Este comando es solo para el dueño y administradores autorizados.' });
+          console.log(`🚨 [AUTH] Intento encubierto bloqueado de ${sender}: "${finalInputText}"`);
           return;
         }
       }

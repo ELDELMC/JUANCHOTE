@@ -20,16 +20,14 @@ module.exports = {
 
     // Verificar permisos
     try {
-      const metadata = await sock.groupMetadata(from);
       const { isAuthorizedSender } = require('../utils/auth');
       
-      // 1. Verificar si el EMISOR es admin o dueño
-      const isAdminCheck = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
+      const isAdminCheck = isMe || isAuthorizedSender(sender);
       if (!isAdminCheck) {
-        return await sendStyledMessage(sock, from, "𝙰𝚌𝚌𝚎𝚜𝚘 𝙳𝚎𝚗𝚎𝚐𝚊𝚍𝚘", "Solo los administradores pueden usar este comando.");
+        return; // Silencioso
       }
     } catch (e) {
-      return await sendStyledMessage(sock, from, "𝙴𝚛𝚛𝚘𝚛", "Ocurrió un problema al verificar permisos.");
+      return;
     }
 
     // Verificar que no haya proceso activo
