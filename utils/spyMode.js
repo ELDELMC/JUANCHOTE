@@ -8,12 +8,64 @@
 
 const { sanitizeGroupName, guardarGrupoClonado } = require('./clonador');
 const { sendStyledMessage } = require('./styles');
+const fs = require('fs');
+const fsp = fs.promises;
+const path = require('path');
+
+const STATE_FILE = path.join(__dirname, '..', 'db', 'espionaje.json');
 
 // Memoria principal de espionaje. { "groupJid": Set(JIDs reales recolectados) }
 const spySessions = new Map();
 
 // Gestor de intervalos de autoguardado { "groupJid": intervalID }
 const spyIntervals = new Map();
+
+async function loadSpyState(sock) {
+  try {
+    const data = await fsp.readFile(STATE_FILE, 'utf-8');
+    const state = JSON.parse(data);
+    if (state && state.grupos) {
+      for (const [groupJid, isActive] of Object.entries(state.grupos)) {
+        if (isActive && !spySessions.has(groupJid)) {
+           try {
+             const metadata = await sock.groupMetadata(groupJid);
+             await startSpy(sock, groupJid, true, metadata);
+           } catch(e) {
+             console.log(`❌ [SPY] No se pudo reanudar en ${groupJid}`);
+           }
+        }
+      }
+    }
+  } catch(e) {
+    // Archivo no existe o error, no hacer nada
+  }
+}
+
+async function saveSpyState() {
+  try {
+    await fsp.mkdir(path.dirname(STATE_FILE), { recursive: true });
+    let existing = { grupos: {} };
+    if (fs.existsSync(STATE_FILE)) {
+      existing = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+    }
+    
+    // Todos los activos a true
+    for (const jid of spySessions.keys()) {
+      existing.grupos[jid] = true;
+    }
+    
+    // Si estaba pero ya no, false
+    for (const jid of Object.keys(existing.grupos)) {
+      if (!spySessions.has(jid)) {
+        existing.grupos[jid] = false;
+      }
+    }
+    
+    await fsp.writeFile(STATE_FILE, JSON.stringify(existing, null, 2), 'utf-8');
+  } catch(e) {
+    console.error("❌ [SPY] Error al guardar estado persistente:", e);
+  }
+}
 
 /**
  * Activa el modo espía en un grupo
@@ -44,6 +96,8 @@ async function startSpy(sock, groupJid, isGroup, metadata) {
 
   spyIntervals.set(groupJid, interval);
   console.log(`🕵️ [SPY] Inició espionaje pasivo en: ${groupName}`);
+  
+  await saveSpyState();
   return true;
 }
 
@@ -70,6 +124,8 @@ async function stopSpy(sock, groupJid, metadata) {
   clearInterval(spyIntervals.get(groupJid));
   spyIntervals.delete(groupJid);
   spySessions.delete(groupJid);
+
+  await saveSpyState();
 
   console.log(`🕵️ [SPY] Detenido en: ${groupName}`);
   return { success: true, totalObtenidosReciente: recientes, groupName };
@@ -102,5 +158,6 @@ module.exports = {
   startSpy,
   stopSpy,
   processSpyMessage,
+  loadSpyState,
   spySessions
 };

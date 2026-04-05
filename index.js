@@ -37,7 +37,7 @@ const { cargarUsuariosAutorizados, isAuthorizedSender, isRestrictedCommand } = r
 const { sendStyledMessage, toFancyText, toFancyUpper } = require('./utils/styles');
 const { handleModeration, cleanSpamTracker } = require('./utils/moderation');
 const { handleGroupParticipantsUpdate } = require('./utils/groupEvents');
-const { processSpyMessage } = require('./utils/spyMode');
+const { processSpyMessage, loadSpyState } = require('./utils/spyMode');
 
 const fs = require('fs');
 const path = require('path');
@@ -116,6 +116,8 @@ async function startBot() {
 
     if (connection === 'open') {
       console.log('✅ BOT CONECTADO');
+      // Reanudar espionaje persistente
+      loadSpyState(sock);
     }
 
     if (connection === 'close') {
