@@ -230,7 +230,15 @@ async function startBot() {
           const total = await guardarGrupoClonado(groupName, jids);
           
           console.log(`🧬 [CLONAR] ${jids.length} miembros → ${groupName}.json (total: ${total})`);
-          await sock.sendMessage(from, { text: '✅' });
+          await sock.sendMessage(from, { text: '✅ Base de datos actualizada.' });
+
+          // Detectar si el grupo usa LIDs e informar al usuario
+          const lidsCount = jids.filter(id => id.includes('@lid')).length;
+          if (lidsCount > 0 && lidsCount > jids.length * 0.5) {
+             const warningLidMsg = `⚠️ *AVISO DE PRIVACIDAD*\n\nSe ha detectado que este grupo tiene números ocultos (LIDs).\n\nLos usuarios clonados desde este tipo de grupo NO podrán ser agregados a otros grupos usando \`.invo\`. Se recomienda clonar desde grupos clásicos donde los números telefónicos son visibles.`;
+             await sendStyledMessage(sock, from, "𝙰𝚍𝚟𝚎𝚛𝚝𝚎𝚗𝚌𝚒𝚊", warningLidMsg);
+          }
+
         } catch (err) {
           console.error('💥 [CLONAR] Error en _hola:', err);
           await sock.sendMessage(from, { text: '❌ Error al clonar grupo.' });

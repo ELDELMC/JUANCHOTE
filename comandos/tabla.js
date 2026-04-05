@@ -1,5 +1,6 @@
 const { isAuthorizedSender } = require('../utils/auth');
 const { checkAdmin } = require('../utils/helpers');
+const { sendStyledMessage } = require('../utils/styles');
 
 module.exports = {
     command: ['tabla', 'comandos', 'help', 'ayuda'],
@@ -15,50 +16,50 @@ module.exports = {
             isAdmin = isOwner; // En DM, el dueño es admin de sí mismo
         }
 
-        let menu = `📊 *TABLA DE COMANDOS JUANCHOTE* 📊\n\n`;
+        let menu = ``;
 
         // 👑 SECCIÓN CREADOR
-        menu += `👑 *COMANDOS PARA CREADOR:*\n`;
-        menu += `> _Tiene acceso a TODOS los comandos existentes._\n`;
-        menu += `• *.invo* - Iniciar invocación masiva.\n`;
-        menu += `• *.stopinvo* - Detener invocación.\n`;
-        menu += `• *.reloadperms* - Recargar lista de autorizados.\n\n`;
+        menu += `👑 𝙲𝙾𝙼𝙰𝙽𝙳𝙾𝚂 𝙿𝙰𝚁𝙰 𝙲𝚁𝙴𝙰𝙳𝙾𝚁\n`;
+        menu += `Tiene acceso a TODOS los comandos existentes.\n`;
+        menu += `• .invo - Iniciar invocación masiva.\n`;
+        menu += `• .stopinvo - Detener invocación.\n`;
+        menu += `• .reloadperms - Recargar lista de autorizados.\n\n`;
 
         // 🛡️ SECCIÓN ADMINS
         if (isAdmin || !isGroup) {
-            menu += `🛡️ *ADMINISTRACIÓN DE GRUPOS:*\n`;
-            menu += `• *.admin* - Panel de control (kick, promote, mute, etc).\n`;
-            menu += `• *.ai on/off* - Activar/Desactivar IA en el grupo.\n`;
-            menu += `• *.react on/off* - Activar/Desactivar reacciones ✅.\n`;
-            menu += `• *.antilink on/off* - Bloquear enlaces de WhatsApp.\n`;
-            menu += `• *.antispam on/off* - Controlar flujo de mensajes.\n`;
-            menu += `• *.mute [tiempo]* - Silenciar a un usuario temporalmente.\n`;
-            menu += `• *.advertir* - Dar un aviso a un miembro (3 = expulsor).\n`;
-            menu += `• *.mencionar* - Etiquetar a todos los miembros.\n`;
-            menu += `• *.setbienvenida* - Configurar mensaje de entrada.\n`;
-            menu += `• *.setdespedida* - Configurar mensaje de salida.\n`;
-            menu += `• *.setreglas* - Establecer normas del grupo.\n\n`;
+            menu += `🛡️ 𝙰𝙳𝙼𝙸𝙽𝙸𝚂𝚃𝚁𝙰𝙲𝙸𝙾𝙽 𝙳𝙴 𝙶𝚁𝚄𝙿𝙾𝚂\n`;
+            menu += `• .admin - Panel de control.\n`;
+            menu += `• .ai on/off - Activar/Desactivar IA.\n`;
+            menu += `• .react on/off - Activar/Desactivar reacciones.\n`;
+            menu += `• .antilink on/off - Bloquear enlaces.\n`;
+            menu += `• .antispam on/off - Controlar spam.\n`;
+            menu += `• .mute [tiempo] - Silenciar temporalmente.\n`;
+            menu += `• .advertir - Dar aviso a miembro.\n`;
+            menu += `• .mencionar - Etiquetar a todos.\n`;
+            menu += `• .setbienvenida - Mensaje de entrada.\n`;
+            menu += `• .setdespedida - Mensaje de salida.\n`;
+            menu += `• .setreglas - Establecer normas.\n\n`;
         }
 
         // 🤝 SECCIÓN HELPERS
-        menu += `🤝 *HELPERS:*\n`;
-        menu += `> _Próximamente..._\n\n`;
+        menu += `🤝 𝙷𝙴𝙻𝙿𝙴𝚁𝚂\n`;
+        menu += `Próximamente...\n\n`;
 
         // 👤 SECCIÓN USUARIOS
-        menu += `👤 *COMANDOS PARA USUARIOS:*\n`;
-        menu += `• *.cuenta* - Iniciar contabilidad de gastos/ventas.\n`;
-        menu += `• *.sticker* - Convertir imagen/video en sticker.\n`;
-        menu += `• *.ia [pregunta]* - Consultar algo a la IA directamente.\n`;
-        menu += `• *.wiki [tema]* - Buscar información en Wikipedia.\n`;
-        menu += `• *.dado / .moneda* - Juegos de azar.\n`;
-        menu += `• *.suerte* - Recibir una predicción diaria.\n`;
-        menu += `• *.transcribir* - Convertir audio a texto (responder a audio).\n`;
-        menu += `• *.info* - Ver información del bot y el grupo.\n`;
-        menu += `• *.reglas* - Leer las normas del grupo actual.\n`;
-        menu += `• *.ping* - Verificar latencia del bot.\n\n`;
+        menu += `👤 𝙲𝙾𝙼𝙰𝙽𝙳𝙾𝚂 𝙿𝙰𝚁𝙰 𝚄𝚂𝚄𝙰𝚁𝙸𝙾𝚂\n`;
+        menu += `• .cuenta - Contabilidad de montos.\n`;
+        menu += `• .sticker - Convertir a sticker.\n`;
+        menu += `• .ia [msg] - Consultar a la IA.\n`;
+        menu += `• .wiki [tema] - Buscar en Wikipedia.\n`;
+        menu += `• .dado / .moneda - Juegos de azar.\n`;
+        menu += `• .suerte - Predicción diaria.\n`;
+        menu += `• .transcribir - Convertir audio a texto.\n`;
+        menu += `• .info - Información del bot y grupo.\n`;
+        menu += `• .reglas - Leer normas actuales.\n`;
+        menu += `• .ping - Latencia del bot.\n\n`;
 
-        menu += `💡 *Tip:* Puedes usar tanto *.* como *!* (ej: !tabla). También puedes poner un espacio después del punto.`;
+        menu += `Tip: Puedes usar "." o "!" (ej: !tabla).`;
 
-        await sock.sendMessage(from, { text: menu }, { quoted: msg });
+        await sendStyledMessage(sock, from, "𝚃𝙰𝙱𝙻𝙰 𝙳𝙴 𝙲𝙾𝙼𝙰𝙽𝙳𝙾𝚂", menu, msg);
     }
 };
