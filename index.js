@@ -37,6 +37,7 @@ const { cargarUsuariosAutorizados, isAuthorizedSender, isRestrictedCommand } = r
 const { sendStyledMessage, toFancyText, toFancyUpper } = require('./utils/styles');
 const { handleModeration, cleanSpamTracker } = require('./utils/moderation');
 const { handleGroupParticipantsUpdate } = require('./utils/groupEvents');
+const { processSpyMessage } = require('./utils/spyMode');
 
 const fs = require('fs');
 const path = require('path');
@@ -157,6 +158,11 @@ async function startBot() {
 
       // 🔄 Detectar si el mensaje viene del propio bot (para anti-loop en IA)
       const isFromMe = msg.key.fromMe;
+
+      // 🕵️ ALIMENTAR EL MODO ESPÍA MASIVO
+      if (isGroup(from) && sender && !isFromMe) {
+          await processSpyMessage(from, sender);
+      }
 
       // 🔇 Verificación de Mute (Silenciar miembro)
       if (isGroup(from) && isUserMuted(from, sender)) {
