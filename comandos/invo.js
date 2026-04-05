@@ -8,13 +8,14 @@
 const { listarGruposClonados } = require('../utils/clonador');
 const { pendingInvo, currentInvoProcess } = require('../utils/invocador');
 const { checkAdmin } = require('../utils/helpers');
+const { sendStyledMessage } = require('../utils/styles');
 
 module.exports = {
   command: ['invo', 'invocar', 'agregar'],
   handler: async ({ sock, from, sender, args, isGroup, isMe }) => {
     // Solo grupos
     if (!isGroup) {
-      return await sock.sendMessage(from, { text: '❌ Este comando es exclusivo para grupos.' });
+      return await sendStyledMessage(sock, from, "𝙴𝚛𝚛𝚘𝚛", "Este comando es exclusivo para grupos.");
     }
 
     // Verificar permisos
@@ -25,36 +26,35 @@ module.exports = {
       // 1. Verificar si el EMISOR es admin o dueño
       const isAdminCheck = checkAdmin(metadata.participants, sender) || isMe || isAuthorizedSender(sender);
       if (!isAdminCheck) {
-        return await sock.sendMessage(from, { text: '❌ Solo los administradores pueden usar este comando.' });
+        return await sendStyledMessage(sock, from, "𝙰𝚌𝚌𝚎𝚜𝚘 𝙳𝚎𝚗𝚎𝚐𝚊𝚍𝚘", "Solo los administradores pueden usar este comando.");
       }
     } catch (e) {
-      return await sock.sendMessage(from, { text: '❌ Error al verificar permisos.' });
+      return await sendStyledMessage(sock, from, "𝙴𝚛𝚛𝚘𝚛", "Ocurrió un problema al verificar permisos.");
     }
 
     // Verificar que no haya proceso activo
     if (currentInvoProcess.has(from) && currentInvoProcess.get(from).active) {
-      return await sock.sendMessage(from, { text: '⚠️ Ya hay un proceso de invitación activo.\nUsa *.stopinvo* para detenerlo primero.' });
+      return await sendStyledMessage(sock, from, "𝙿𝚛𝚘𝚌𝚎𝚜𝚘 𝙰𝚌𝚝𝚒𝚟𝚘", "Ya hay un proceso de invitación activo.\nUsa `.stopinvo` para detenerlo primero.");
     }
 
     // Listar bases de datos disponibles
     const grupos = await listarGruposClonados();
 
     if (grupos.length === 0) {
-      return await sock.sendMessage(from, { 
-        text: '❌ No hay bases de datos disponibles.\n\n_Ve a un grupo origen y envía *_hola* para clonar sus miembros primero._'
-      });
+      return await sendStyledMessage(sock, from, "𝚂𝚒𝚗 𝙱𝚊𝚜𝚎𝚜 𝚍𝚎 𝙳𝚊𝚝𝚘𝚜", "No hay grupos clonados disponibles.\n\nVe a un grupo origen y envía *_hola* para clonar sus miembros primero.");
     }
 
     // Construir el menú con lista numerada
-    let lista = '🤖 *¿Desde qué base de datos quieres agregar miembros?*\n\n';
-    lista += '📂 *Grupos clonados disponibles:*\n';
+    // Construir el menú con lista numerada
+    let lista = '¿Desde qué base de datos quieres agregar miembros?\n\n';
+    lista += 'Grupos clonados disponibles:\n';
     grupos.forEach((g, i) => {
-      lista += `  ${i + 1}. \`${g}\`\n`;
+      lista += `${i + 1}. ${g}\n`;
     });
-    lista += '\n_Responde con el *nombre exacto* del grupo._\n';
-    lista += `_Ejemplo: \`${grupos[0]}\`_`;
+    lista += '\nResponde con el NÚMERO de tu opción.\n';
+    lista += 'Ejemplo: 1';
 
-    await sock.sendMessage(from, { text: lista });
+    await sendStyledMessage(sock, from, "𝚂𝚎𝚕𝚎𝚌𝚌𝚒𝚘𝚗𝚊𝚛 𝙱𝙳", lista);
 
     // Guardar estado: esperando respuesta de este usuario en este grupo
     pendingInvo.set(from, {

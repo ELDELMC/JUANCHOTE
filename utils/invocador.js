@@ -12,6 +12,7 @@
 
 const { leerGrupoClonado } = require('./clonador');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { sendStyledMessage } = require('./styles');
 
 // 🗺️ Map global de procesos activos: groupJid → { active, added, failed, total, stopped }
 const currentInvoProcess = new Map();
@@ -54,7 +55,7 @@ function sleep(ms) {
 async function iniciarAgregacion(sock, groupJid, dbName, sender) {
   // Verificar que no haya proceso activo
   if (currentInvoProcess.has(groupJid) && currentInvoProcess.get(groupJid).active) {
-    await sock.sendMessage(groupJid, { text: '⚠️ Ya hay un proceso de invitación activo en este grupo.\nUsa *.stopinvo* para detenerlo.' });
+    await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚌𝚎𝚜𝚘 𝙰𝚌𝚝𝚒𝚟𝚘", "Ya hay un proceso de invitación activo en este grupo.\nUsa `.stopinvo` para detenerlo.");
     return;
   }
 
@@ -62,17 +63,33 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
     // 1. Verificar que el bot sea admin
     const metadata = await sock.groupMetadata(groupJid);
     const botJid = jidNormalizedUser(sock.user.id);
-    const botParticipant = metadata.participants.find(p => jidNormalizedUser(p.id) === botJid);
     
+    console.log(`\n🔍 [DEBUG ADMIN] Verificando rango del bot. Bot JID: ${botJid}`);
+    
+    const botParticipant = metadata.participants.find(p => {
+        const normJid = jidNormalizedUser(p.id);
+        if (normJid === botJid) {
+            console.log(`🔍 [DEBUG ADMIN] ¡Bot encontrado en participantes! Rango actual: ${p.admin}`);
+            return true;
+        }
+        return false;
+    });
+    
+    if (!botParticipant) {
+        console.log(`❌ [DEBUG ADMIN] El bot no se encontró en la lista de participantes. Participantes:`);
+        console.dir(metadata.participants.map(p => ({id: p.id, norm: jidNormalizedUser(p.id), admin: p.admin})), { depth: null });
+    }
+
     if (!botParticipant?.admin) {
-      await sock.sendMessage(groupJid, { text: '❌ Necesito ser *administrador* de este grupo para agregar miembros.' });
+      console.log(`❌ [DEBUG ADMIN] Fallo en la verificación. botParticipant: ${JSON.stringify(botParticipant)}`);
+      await sendStyledMessage(sock, groupJid, "𝙴𝚛𝚛𝚘𝚛 𝚍𝚎 𝙿𝚎𝚛𝚖𝚒𝚜𝚘𝚜", "Necesito ser administrador de este grupo para agregar miembros.");
       return;
     }
 
     // 2. Cargar la base de datos
     const jidsFromDb = await leerGrupoClonado(dbName);
     if (jidsFromDb.length === 0) {
-      await sock.sendMessage(groupJid, { text: `❌ La base de datos *${dbName}* está vacía.` });
+      await sendStyledMessage(sock, groupJid, "𝙱𝙳 𝚅𝚊𝚌í𝚊", `La base de datos ${dbName} está vacía.`);
       return;
     }
 
@@ -81,7 +98,7 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
     const toAdd = jidsFromDb.filter(jid => !currentMembers.has(jidNormalizedUser(jid)));
 
     if (toAdd.length === 0) {
-      await sock.sendMessage(groupJid, { text: '✅ Todos los miembros de esa base de datos ya están en este grupo.' });
+      await sendStyledMessage(sock, groupJid, "𝚂𝚒𝚗 𝙼𝚒𝚎𝚖𝚋𝚛𝚘𝚜", "Todos los miembros de esa base de datos ya están en este grupo.");
       return;
     }
 
@@ -98,9 +115,7 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
     };
     currentInvoProcess.set(groupJid, processState);
 
-    await sock.sendMessage(groupJid, { 
-      text: `🚀 *INVOCACIÓN INICIADA*\n\n📦 BD: *${dbName}*\n👥 Por agregar: *${toAdd.length}*\n⏱️ Tiempo estimado: ~${Math.ceil(toAdd.length * 2.5)} minutos\n\n_Cada agregación tiene delays aleatorios anti-ban._\n_Usa *.stopinvo* para detener._`
-    });
+    await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙸𝚗𝚒𝚌𝚒𝚊𝚍𝚊", `📦 BD: ${dbName}\n👥 Por agregar: ${toAdd.length}\n⏱️ Tiempo estimado: ~${Math.ceil(toAdd.length * 2.5)} min.\n\nCada agregación tiene delays aleatorios anti-ban.\nUsa .stopinvo para detener.`);
 
     console.log(`\n🚀 [INVOCADOR] INICIO: ${toAdd.length} miembros desde ${dbName} → ${groupJid}`);
 
@@ -111,9 +126,7 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
       // Verificar si fue detenido
       if (!state || !state.active || state.stopped) {
         console.log(`🛑 [INVOCADOR] Proceso detenido manualmente en ${groupJid}`);
-        await sock.sendMessage(groupJid, { 
-          text: `🛑 *INVOCACIÓN DETENIDA*\n\n✅ Agregados: ${state?.added || 0}\n❌ Fallidos: ${state?.failed || 0}\n⏭️ Restantes: ${toAdd.length - i}`
-        });
+        await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙳𝚎𝚝𝚎𝚗𝚒𝚍𝚊", `✅ Agregados: ${state?.added || 0}\n❌ Fallidos: ${state?.failed || 0}\n⏭️ Restantes: ${toAdd.length - i}`);
         currentInvoProcess.delete(groupJid);
         return;
       }
@@ -128,7 +141,7 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
           const stillAdmin = checkMeta.participants.find(p => jidNormalizedUser(p.id) === botJid);
           if (!stillAdmin?.admin) {
             console.log(`🚨 [INVOCADOR] Bot perdió admin en ${groupJid}. Deteniendo.`);
-            await sock.sendMessage(groupJid, { text: '🚨 *PROCESO DETENIDO*: El bot ya no es administrador.' });
+            await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚌𝚎𝚜𝚘 𝙳𝚎𝚝𝚎𝚗𝚒𝚍𝚘", "El bot ya no es administrador.");
             currentInvoProcess.delete(groupJid);
             return;
           }
@@ -161,7 +174,7 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
         // Si es error 403, 429 o rate limit → pausa de 10 minutos
         if (statusCode === 403 || statusCode === 429 || String(err).includes('rate')) {
           console.log(`⏸️ [INVOCADOR] Rate limit detectado. Pausa de 10 minutos...`);
-          await sock.sendMessage(groupJid, { text: `⏸️ Pausa de seguridad (10 min) por rate limit en ${number}...` });
+          await sendStyledMessage(sock, groupJid, "𝙿𝚊𝚞𝚜𝚊 𝚍𝚎 𝚂𝚎𝚐𝚞𝚛𝚒𝚍𝚊𝚍", `Pausa de 10 min por rate limit en ${number}...`);
           await sleep(600000); // 10 minutos
         }
       }
@@ -169,16 +182,14 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
       // 📊 Progreso cada 5 agregaciones
       if ((i + 1) % 5 === 0) {
         const state = currentInvoProcess.get(groupJid);
-        await sock.sendMessage(groupJid, { 
-          text: `➕ Agregando ${i + 1}/${toAdd.length} • ✅ ${state.added} • ❌ ${state.failed} • ⏭️ ${state.skipped}`
-        });
+        await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚐𝚛𝚎𝚜𝚘", `➕ Agregando ${i + 1}/${toAdd.length}\n✅ Exitosos: ${state.added}\n❌ Fallidos: ${state.failed}\n⏭️ Saltados: ${state.skipped}`);
       }
 
       // ⏱️ Pausa extra cada 10 exitosas
       if (state.added > 0 && state.added % 10 === 0) {
         const longPause = getLongPause();
         console.log(`⏸️ [INVOCADOR] Pausa larga: ${Math.ceil(longPause / 60000)} minutos tras 10 exitosas.`);
-        await sock.sendMessage(groupJid, { text: `⏸️ Pausa de seguridad de ${Math.ceil(longPause / 60000)} min tras 10 agregaciones exitosas...` });
+        await sendStyledMessage(sock, groupJid, "𝙿𝚊𝚞𝚜𝚊 𝚍𝚎 𝚂𝚎𝚐𝚞𝚛𝚒𝚍𝚊𝚍", `Pausa de ${Math.ceil(longPause / 60000)} min tras 10 agregaciones exitosas...`);
         await sleep(longPause);
         continue; // No hacer el delay normal después de la pausa larga
       }
@@ -195,16 +206,14 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
     const finalState = currentInvoProcess.get(groupJid);
     const elapsed = Math.ceil((Date.now() - finalState.startTime) / 60000);
 
-    await sock.sendMessage(groupJid, { 
-      text: `🏁 *INVOCACIÓN COMPLETADA*\n\n📦 BD: *${dbName}*\n✅ Agregados: ${finalState.added}\n❌ Fallidos: ${finalState.failed}\n⏭️ No existen: ${finalState.skipped}\n⏱️ Duración: ${elapsed} minutos`
-    });
+    await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙲𝚘𝚖𝚙𝚕𝚎𝚝𝚊𝚍𝚊", `📦 BD: ${dbName}\n✅ Agregados: ${finalState.added}\n❌ Fallidos: ${finalState.failed}\n⏭️ No existen: ${finalState.skipped}\n⏱️ Duración: ${elapsed} minutos`);
 
     console.log(`\n🏁 [INVOCADOR] COMPLETADO: ${finalState.added} agregados, ${finalState.failed} fallidos en ${elapsed} min.`);
     currentInvoProcess.delete(groupJid);
 
   } catch (err) {
     console.error('💥 [INVOCADOR] Error fatal:', err);
-    await sock.sendMessage(groupJid, { text: '💥 Error fatal en el proceso de invitación.' });
+    await sendStyledMessage(sock, groupJid, "𝙴𝚛𝚛𝚘𝚛 𝙵𝚊𝚝𝚊𝚕", "Ocurrió un problema de interrupción en el proceso.");
     currentInvoProcess.delete(groupJid);
   }
 }

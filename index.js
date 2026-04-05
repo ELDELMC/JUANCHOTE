@@ -34,6 +34,7 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { sanitizeGroupName, guardarGrupoClonado } = require('./utils/clonador');
 const { pendingInvo, iniciarAgregacion } = require('./utils/invocador');
 const { cargarUsuariosAutorizados, isAuthorizedSender, isRestrictedCommand } = require('./utils/auth');
+const { sendStyledMessage, toFancyText, toFancyUpper } = require('./utils/styles');
 const { handleModeration, cleanSpamTracker } = require('./utils/moderation');
 const { handleGroupParticipantsUpdate } = require('./utils/groupEvents');
 
@@ -241,17 +242,26 @@ async function startBot() {
       if (isGroup(from) && pendingInvo.has(from)) {
         const pending = pendingInvo.get(from);
         if (pending.sender === sender && pending.stage === 'waiting_db_name') {
-          const selectedDb = finalInputText.trim().toLowerCase();
+          const rawInput = finalInputText.trim();
+          const optionIndex = parseInt(rawInput) - 1; // Convertir a índice (Ej: "1" -> 0)
           
-          if (pending.availableGroups.includes(selectedDb)) {
+          let selectedDb = null;
+
+          // Verificar si el usuario ingresó un número válido
+          if (!isNaN(optionIndex) && optionIndex >= 0 && optionIndex < pending.availableGroups.length) {
+            selectedDb = pending.availableGroups[optionIndex];
+          } 
+          // Mantener retrocompatibilidad por si aún escriben el nombre exacto
+          else if (pending.availableGroups.includes(rawInput.toLowerCase())) {
+            selectedDb = rawInput.toLowerCase();
+          }
+
+          if (selectedDb) {
             pendingInvo.delete(from);
             console.log(`📩 [INVO] BD seleccionada: ${selectedDb} por ${sender}`);
-            
             // Iniciar agregación de forma asíncrona (no bloquea el handler)
             iniciarAgregacion(sock, from, selectedDb, sender);
             return;
-          } else {
-            // No es un nombre válido, ignorar (puede ser un mensaje normal)
           }
         }
       }
@@ -302,7 +312,7 @@ async function startBot() {
       if (!sesionActiva && intencion === "INICIAR") {
         iniciarCuenta(from);
         console.log(`[BOT] 📥 Enviando inicio de cuenta a ${from}`);
-        return await sock.sendMessage(from, { text: "📥 *¡Modo Cuenta Activado!* 🧮\n\nPuedes enviarme los montos uno por uno o reenviarlos.\n\n✅ Reaccionaré con un emoji a cada valor.\n🏁 Cuando termines, dime algo como *'listo'* o *'dame el total'*." }, { quoted: msg });
+        return await sendStyledMessage(sock, from, "𝙼𝚘𝚍𝚘 𝙲𝚞𝚎𝚗𝚝𝚊 𝙰𝚌𝚝𝚒𝚟𝚊𝚍𝚘", "Puedes enviarme los montos uno por uno o reenviarlos.\n\n✅ Reaccionaré con un emoji a cada valor.\n🏁 Cuando termines, dime algo como *'listo'* o *'dame el total'*.", msg);
       }
 
       // B) Si hay una sesión activa, procesar el mensaje
@@ -349,7 +359,7 @@ async function startBot() {
                           `✅ *Cuenta cerrada con éxito.*`;
 
           console.log(`[BOT] 📊 Enviando reporte de cuenta a ${from}`);
-          return await sock.sendMessage(from, { text: reporte }, { quoted: msg });
+          return await sendStyledMessage(sock, from, "𝚁𝚎𝚙𝚘𝚛𝚝𝚎 𝚍𝚎 𝙲𝚞𝚎𝚗𝚝𝚊 𝙵𝚒𝚗𝚊𝚕", reporte, msg);
         }
         
         // --- 3. Prevención de IA General ---
@@ -420,7 +430,7 @@ async function startBot() {
          }
       } else {
          console.log(`[BOT] 📤 Enviando respuesta de IA a ${from}: ${response.slice(0, 50)}...`);
-         await sock.sendMessage(from, { text: response }, { quoted: msg });
+         await sendStyledMessage(sock, from, "𝙸𝙰 𝚁𝚎𝚜𝚙𝚘𝚗𝚍𝚎", response, msg);
       }
 
       console.log('🤖 BOT envió respuesta');

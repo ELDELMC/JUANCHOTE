@@ -12,6 +12,7 @@ const fsp = fs.promises;
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { matchPrefix } = require('./helpers');
+const { sendStyledMessage } = require('./styles');
 
 const AUTH_FILE = path.join(__dirname, '..', 'db', 'allowed_users.json');
 
@@ -56,6 +57,11 @@ async function cargarUsuariosAutorizados() {
       allowedUsers = new Set([...HARDCODED_JIDS, ...data.allowedJIDs]);
       console.log(`🔐 [AUTH] ${allowedUsers.size} usuarios autorizados cargados.`);
     } else {
+      if (!isAuthorized) {
+            console.log(`🚨 [AUTH] Intento NO autorizado de ${sender}: "${commandName}"`);
+            await sendStyledMessage(sock, from, "𝙰𝚌𝚌𝚎𝚜𝚘 𝚁𝚎𝚜𝚝𝚛𝚒𝚗𝚐𝚒𝚍𝚘", "Este comando es solo para el dueño y administradores autorizados.", msg);
+            return true; 
+        }
       allowedUsers = new Set(HARDCODED_JIDS);
       console.log('🔐 [AUTH] Archivo vacío, usando lista hardcodeada.');
     }

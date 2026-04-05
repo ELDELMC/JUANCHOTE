@@ -1,5 +1,6 @@
 const { getGroupSettings } = require('./settings');
 const { getIsAdmin } = require('./helpers');
+const { sendStyledMessage } = require('./styles');
 
 /**
  * 🛡️ Middleware de Moderación
@@ -16,9 +17,7 @@ async function handleModeration(sock, from, sender, msg, text) {
         if (text.match(urlRegex)) {
             console.log(`🚫 Enlace detectado de ${sender}. Eliminando...`);
             await sock.sendMessage(from, { delete: msg.key });
-            await sock.sendMessage(from, { 
-                text: `⚠️ @_@ ${sender.split('@')[0]}, los enlaces están prohibidos aquí.` 
-            }, { mentions: [sender] });
+            await sendStyledMessage(sock, from, "𝙴𝚗𝚕𝚊𝚌𝚎 𝙿𝚛𝚘𝚑𝚒𝚋𝚒𝚍𝚘", `@${sender.split('@')[0]}, los enlaces están prohibidos en este grupo.`);
             return true;
         }
     }

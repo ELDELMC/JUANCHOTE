@@ -1,4 +1,5 @@
 const { getGroupSettings } = require('./settings');
+const { sendStyledMessage, toFancyText } = require('./styles');
 
 /**
  * 📢 Manejador de Eventos de Grupo
@@ -20,7 +21,7 @@ async function handleGroupParticipantsUpdate(sock, anu) {
                     .replace(/@user/g, `@${num.split('@')[0]}`)
                     .replace(/@groupname/g, metadata.subject);
                 
-                await sock.sendMessage(id, { text: welcomeMsg, mentions: [num] });
+                await sendStyledMessage(sock, id, "𝙱𝚒𝚎𝚗𝚟𝚎𝚗𝚒𝚍𝚘 𝚊𝚕 𝙶𝚛𝚞𝚙𝚘", welcomeMsg);
             }
             
             if (action === 'remove' && settings.despedida) {
@@ -28,7 +29,7 @@ async function handleGroupParticipantsUpdate(sock, anu) {
                     .replace(/@user/g, `@${num.split('@')[0]}`)
                     .replace(/@groupname/g, metadata.subject);
                     
-                await sock.sendMessage(id, { text: goodbyeMsg, mentions: [num] });
+                await sendStyledMessage(sock, id, "𝙷𝚊𝚜𝚝𝚊 𝙻𝚞𝚎𝚐𝚘", goodbyeMsg);
             }
         }
     } catch (err) {
