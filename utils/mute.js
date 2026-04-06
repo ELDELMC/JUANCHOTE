@@ -26,7 +26,7 @@ function saveMuted() {
 }
 
 function parseDuration(durationStr) {
-    const match = durationStr.match(/^(\d+)([smhdMa]$/);
+    const match = durationStr.match(/^(\d+)([smhdMa])$/);
     if (!match) return null;
     const value = parseInt(match[1]);
     const unit = match[2];
