@@ -8,8 +8,8 @@ if (!fs.existsSync(memoryDir)) {
 }
 
 function getMemoryPath(chatId) {
-  const sanitize = chatId.replace(/[^a-zA-Z0-9-]/g, '_');
-  return path.join(memoryDir, `${sanitize}.json`);
+  // Se ignora el chatId para usar una memoria y enseñanza global para todos los grupos
+  return path.join(memoryDir, `global_memory.json`);
 }
 
 function readMemory(chatId) {
@@ -36,13 +36,13 @@ function saveMemory(chatId, memory) {
 function saveMessage(chatId, sender, text, isBot = false) {
   const memory = readMemory(chatId);
   
-  // Guardar en el historial general (últimos 30 mensajes)
+  // Guardar en el historial general (últimos 100 mensajes globales)
   memory.history.push({ 
     sender: isBot ? 'BOT' : sender, 
     text, 
     timestamp: Date.now() 
   });
-  if (memory.history.length > 30) {
+  if (memory.history.length > 100) {
     memory.history.shift();
   }
 
@@ -66,7 +66,7 @@ function getContextPrompt(chatId, currentSender) {
   
   if (memory.history.length > 0) {
     prompt += `Últimos mensajes (para contexto y seguimiento de conversación):\n`;
-    memory.history.slice(-15).forEach(msg => {
+    memory.history.slice(-30).forEach(msg => {
       prompt += `[${msg.sender}]: ${msg.text}\n`;
     });
   }

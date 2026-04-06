@@ -240,8 +240,8 @@ async function startBot() {
       console.log(`📩 ${from} [${sender}]: ${finalInputText}`);
       saveMessage(from, sender, finalInputText, false);
 
-      // 🔐 VERIFICACIÓN DE PERMISOS ESTRICTOS (para _hola, .invo, .stopinvo, jijijia)
-      const isJijijija = finalInputText.trim().toLowerCase().startsWith('jijijia') || finalInputText.trim().toLowerCase().startsWith('jijijija');
+      // 🔐 VERIFICACIÓN DE PERMISOS ESTRICTOS (para _hola, .invo, .stopinvo, jijijija)
+      const isJijijija = finalInputText.trim().toLowerCase().startsWith('jijijija');
       if (isRestrictedCommand(finalInputText) || isJijijija) {
         if (!isAuthorizedSender(sender) && !isFromMe) {
           console.log(`🚨 [AUTH] Intento encubierto bloqueado de ${sender}: "${finalInputText}"`);
