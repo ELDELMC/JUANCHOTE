@@ -74,17 +74,49 @@ async function startBot(sessionName = 'auth', isMain = true) {
     if (connection === 'open') {
       console.log(`✅ BOT CONECTADO: ${sessionName}`);
       botManager.addBot(sessionName, sock);
+
+      // Si es el principal, tratar de reanudar procesos de invitación pendientes
+      if (isMain) {
+        // Asegurar que la carpeta db existe
+        const dbPath = path.join(__dirname, 'db');
+        if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath);
+        
+        console.log('🔄 Buscando procesos de invitación para reanudar...');
+        setTimeout(() => {
+          invocador.resumeProcesses(sock).catch(e => console.error('Error reanudando:', e.message));
+        }, 5000); // 5 seg de espera para que el socket esté listo
+      }
     }
 
     if (connection === 'close') {
       const error = lastDisconnect?.error;
       botManager.removeBot(sessionName);
       const statusCode = error?.output?.statusCode;
-      if (statusCode !== DisconnectReason.loggedOut) {
-        console.log(`🔄 Reconectando ${sessionName}...`);
-        setTimeout(() => startBot(sessionName, isMain), 3000);
+      
+      // Error 401 o LoggedOut significa que la sesión ya no sirve
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+
+      if (isLoggedOut) {
+        console.log(`🚫 La sesión [${sessionName}] ha vencido o fue cerrada.`);
+        console.log(`🧹 Borrando carpeta ${sessionName} para generar nuevo QR...`);
+        
+        try {
+          const sessionPath = path.join(__dirname, sessionName);
+          if (fs.existsSync(sessionPath)) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            console.log(`✅ Carpeta ${sessionName} eliminada.`);
+          }
+        } catch (e) {
+          console.error(`❌ Error borrando carpeta:`, e.message);
+        }
+
+        // Reiniciar inmediatamente para que el usuario pueda ver el nuevo QR
+        console.log(`🆕 Iniciando proceso de nuevo QR para ${sessionName}...`);
+        setTimeout(() => startBot(sessionName, isMain), 1000);
       } else {
-        console.log(`🚫 Sesión cerrada en ${sessionName}`);
+        // Reconexión por falla de red o servidor
+        console.log(`🔄 Reconectando ${sessionName} (Causa: ${statusCode})...`);
+        setTimeout(() => startBot(sessionName, isMain), 3000);
       }
     }
   });
