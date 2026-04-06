@@ -30,6 +30,8 @@ const { transcribeAudio, textToSpeech } = require('./utils/audio');
 const { getGroupSettings } = require('./utils/settings');
 const { isUserMuted } = require('./utils/mute');
 const { iniciarCuenta, sumarValor, obtenerSesion, finalizarCuenta, limpiarTodasLasCuentas } = require('./utils/accounts');
+const { saveMessage } = require('./utils/memory');
+const { describeImage } = require('./utils/vision');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { sanitizeGroupName, guardarGrupoClonado } = require('./utils/clonador');
 const { pendingInvo, iniciarAgregacion } = require('./utils/invocador');
@@ -81,7 +83,8 @@ async function startBot() {
   const keys = {
       'GEMINI_API_KEY': process.env.GEMINI_API_KEY,
       'GROQ_API_KEY': process.env.GROQ_API_KEY,
-      'XAI_API_KEY': process.env.XAI_API_KEY
+      'GROQ_API_KEY_2': process.env.GROQ_API_KEY_2,
+      'OPENROUTER_API_KEY': process.env.OPENROUTER_API_KEY
   };
 
   for (const [name, value] of Object.entries(keys)) {
@@ -95,8 +98,8 @@ async function startBot() {
   }
   console.log('---------------------------\n');
   
-  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.XAI_API_KEY) {
-    console.warn('⚠️ [ALERTA] No se detectó ninguna llave de IA en el entorno. Revisa el archivo .env o las variables en el panel.');
+  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
+    console.warn('⚠️ [ALERTA] No se detectó ninguna llave de IA (Groq, Gemini, OpenRouter) en el entorno. Revisa el archivo .env o las variables en el panel.');
   }
 
   const sock = makeWASocket({
@@ -187,6 +190,26 @@ async function startBot() {
       }
 
       const audioMessage = msg.message?.audioMessage;
+      const imageMessage = msg.message?.imageMessage;
+
+      if (imageMessage && isGroup(from)) {
+          const settings = getGroupSettings(from);
+          if (settings.ai_activada) {
+            console.log("📸 Imagen detectada, descargando para análisis Visual (Gemini)...");
+            try {
+              const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: console, reuploadRequest: sock.updateMediaMessage });
+              const mimeType = imageMessage.mimetype || "image/jpeg";
+              const imgDesc = await describeImage(buffer, mimeType);
+              if (imgDesc) {
+                // Le pasamos el texto junto a la descripción de la imagen a tu bot IA
+                finalInputText = finalInputText ? `${finalInputText}\n[Te envió una foto: "${imgDesc}"]` : `[Te envió una foto: "${imgDesc}"]`;
+              }
+            } catch (e) {
+              console.error("❌ Error en análisis de imagen:", e);
+            }
+          }
+      }
+
       if (audioMessage) {
         if (isGroup(from)) {
           const settings = getGroupSettings(from);
@@ -215,6 +238,7 @@ async function startBot() {
       if (!finalInputText) return;
 
       console.log(`📩 ${from} [${sender}]: ${finalInputText}`);
+      saveMessage(from, sender, finalInputText, false);
 
       // 🔐 VERIFICACIÓN DE PERMISOS ESTRICTOS (para _hola, .invo, .stopinvo, jijijia)
       const isJijijija = finalInputText.trim().toLowerCase().startsWith('jijijia') || finalInputText.trim().toLowerCase().startsWith('jijijija');
@@ -428,12 +452,20 @@ async function startBot() {
 
       console.log('🧠 IA procesando...');
 
-      const response = await handleAI(finalInputText, isGroup(from));
+      // Animación de 'escribiendo...' y Delay dinámico natural
+      const delayMs = Math.floor(Math.random() * 4000) + 2000;
+      await sock.sendPresenceUpdate('composing', from);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+
+      const response = await handleAI(finalInputText, isGroup(from), from, sender);
 
       if (response && response.trim().toUpperCase() === 'IGNORAR') {
          console.log('🤫 La IA decidió IGNORAR (están hablando de otros temas en el grupo).');
          return;
       }
+
+      // Guardar la respuesta del bot en la memoria
+      saveMessage(from, sock.user.id, response, true);
 
       console.log('🤖 Respuesta IA lista. Voice Mode:', isVoice);
 
@@ -456,7 +488,9 @@ async function startBot() {
          }
       } else {
          console.log(`[BOT] 📤 Enviando respuesta de IA a ${from}: ${response.slice(0, 50)}...`);
-         await sendStyledMessage(sock, from, "𝙸𝙰 𝚁𝚎𝚜𝚙𝚘𝚗𝚍𝚎", response, msg);
+         // 30% de probabilidad de tirar el mensaje al aire (sin citar/mencionar)
+         const quoteOpt = (Math.random() > 0.3) ? msg : undefined;
+         await sock.sendMessage(from, { text: response }, { quoted: quoteOpt });
       }
 
       console.log('🤖 BOT envió respuesta');

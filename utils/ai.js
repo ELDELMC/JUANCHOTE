@@ -1,11 +1,17 @@
 const axios = require('axios');
 const { getPersonality } = require('./personality');
 
-// 🔌 Configuración de proveedores (Gemini, Groq, x.ai)
 const getProviders = () => [
   {
     name: "GROQ",
     key: process.env.GROQ_API_KEY,
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+    type: "openai"
+  },
+  {
+    name: "GROQ_2",
+    key: process.env.GROQ_API_KEY_2,
     url: "https://api.groq.com/openai/v1/chat/completions",
     model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
     type: "openai"
@@ -17,10 +23,10 @@ const getProviders = () => [
     type: "google"
   },
   {
-    name: "XAI",
-    key: process.env.XAI_API_KEY,
-    url: "https://api.x.ai/v1/chat/completions",
-    model: process.env.XAI_MODEL || "grok-2-1212",
+    name: "OPENROUTER",
+    key: process.env.OPENROUTER_API_KEY,
+    url: "https://openrouter.ai/api/v1/chat/completions",
+    model: "meta-llama/llama-3-8b-instruct:free",
     type: "openai"
   }
 ];
@@ -57,7 +63,7 @@ async function callApi(provider, systemPrompt, userPrompt) {
 /**
  * 🤖 Función de IA con FALLBACK automático para conversación general
  */
-async function askAI(prompt, isGroup = false) {
+async function askAI(prompt, isGroup = false, from = null, sender = null) {
   const providers = getProviders().filter(p => p.key);
   
   if (providers.length === 0) {
@@ -66,7 +72,15 @@ async function askAI(prompt, isGroup = false) {
 
   let systemContent = getPersonality(isGroup);
   if (isGroup) {
-     systemContent += "\n\nIMPORTANTE (MODO GRUPO): El grupo se llama JuanChote. Responde de forma casual. Si crees que no te incumbe, di: IGNORAR";
+     systemContent += "\n\nIMPORTANTE (MODO GRUPO): El grupo se llama JuanChote. Eres un miembro/integrante más del grupo de WhatsApp. Responde de forma casual, orgánica y natural. A veces no menciones a nadie directamente para lanzar temas al aire. Si crees que el mensaje actual definitivamente no te incumbe o están hablando entre ellos de temas personales, di exactamente: IGNORAR";
+  } else {
+     systemContent += "\n\nIMPORTANTE: Eres un asistente amigable en un chat privado. Responde naturalmente y trata de adecuarte al estilo del usuario.";
+  }
+
+  // Inject memory context if available
+  if (from) {
+    const { getContextPrompt } = require('./memory');
+    systemContent += getContextPrompt(from, sender);
   }
 
   for (const provider of providers) {
@@ -86,7 +100,16 @@ async function askAI(prompt, isGroup = false) {
  * 📊 Detector de intención con FALLBACK (Unificado)
  */
 async function detectarIntencionContable(prompt) {
-  const providers = getProviders().filter(p => p.key);
+  // Dar prioridad a OpenRouter y Gemini para tareas secundarias, ahorrando cuota de Groq principal
+  const providers = getProviders()
+      .filter(p => p.key)
+      .sort((a, b) => {
+          if (a.name === "OPENROUTER") return -1;
+          if (a.name === "GEMINI" && b.name !== "OPENROUTER") return -1;
+          if (a.name === "GROQ_2" && !["OPENROUTER", "GEMINI"].includes(b.name)) return -1;
+          return 0;
+      });
+      
   if (providers.length === 0) return "NADA";
 
   const systemPrompt = `Eres un clasificador de intenciones para un bot de contabilidad. 
