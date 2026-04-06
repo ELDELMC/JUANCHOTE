@@ -162,7 +162,11 @@ async function startBot() {
       if (msgTime < botStartTime) return;
 
       const from = msg.key.remoteJid;
-      const sender = jidNormalizedUser(isGroup(from) ? msg.key.participant : from);
+      
+      // WhatsApp envuelve las Comunidades en LIDs (números ocultos empresariales)
+      // Pero a veces provee participantAlt con el número real (@s.whatsapp.net)
+      const rawParticipant = isGroup(from) ? (msg.key.participantAlt || msg.key.participant) : from;
+      const sender = jidNormalizedUser(rawParticipant);
 
       // 🔄 Detectar si el mensaje viene del propio bot (para anti-loop en IA)
       const isFromMe = msg.key.fromMe;
