@@ -13,30 +13,16 @@ module.exports = {
     }
 
     const metadata = await sock.groupMetadata(from);
-    const { spySessions } = require('../utils/spyMode');
-    const isActivo = spySessions.has(from);
+    const { triggerForceFlush } = require('../utils/spyMode');
 
-    const accion = args[0]?.toLowerCase();
+    // Dado que ahora es Automático Global, este comando solo sirve para vaciar forzadamente
+    // el buffer en tiempo real y ver cuántos atrapó sin esperar los 30 segundos.
+    const status = await triggerForceFlush(from);
 
-    // Si ya está activo y solo dice "jijijija" o "off/no", lo apaga y guarda el buffer
-    if ((isActivo && !accion) || accion === 'no' || accion === 'off') {
-      const status = await stopSpy(sock, from, metadata);
-      if (status.success) {
-        await sock.sendMessage(from, { text: `📵 Modo espía desactivado. Último vaciado: ${status.totalObtenidosReciente} atrapados.` });
-      } else {
-        await sock.sendMessage(from, { text: '📵' });
-      }
-      return;
-    }
-
-    // Activa por defecto si no hay argumentos (y no estaba activo) o si dice "si/on"
-    if (!isActivo || accion === 'si' || accion === 'on') {
-      const iniciado = await startSpy(sock, from, isGroup, metadata);
-      if (iniciado) {
-        await sock.sendMessage(from, { text: 'espero que se encuentren de lo mejor raza' });
-      } else {
-        await sock.sendMessage(from, { text: '📵' });
-      }
+    if (status.success && status.atrapados > 0) {
+      await sock.sendMessage(from, { text: `🕵️‍♂️ *MODO ESPÍA ACTIVO*\n\nSe acaba de forzar el guardado de *${status.atrapados}* contactos reales recientes desde el radar hacia la base de datos de clonación.` });
+    } else {
+      await sock.sendMessage(from, { text: `🕵️‍♂️ *MODO ESPÍA NORMALMENTE ACTIVO*\n\nEl espiador automático está encendido y protegiendo silenciosamente. Actualmente no hay contactos nuevos pendientes por guardar en el radar (esperando a que alguien escriba).` });
     }
   }
 };

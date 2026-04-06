@@ -1,168 +1,98 @@
 /**
- * 🕵️ MODO ESPÍA (SPY MODE)
- * Sistema de recolección pasiva de contactos burlando la encriptación LID
+ * 🕵️ MODO ESPÍA AUTOMÁTICO (Global y Permanente)
  * 
- * Intercepta los "sender" reales de los mensajes que viajan en un grupo y 
- * los agrega de forma silenciosa a la base de datos de clonación.
+ * Intercepta los "sender" reales de los mensajes que viajan en TODOS los grupos 
+ * de forma silenciosa y los vuelca al disco duro cada 30 segundos usando un 
+ * único hilo global para máximo rendimiento.
  */
 
 const { sanitizeGroupName, guardarGrupoClonado } = require('./clonador');
-const { sendStyledMessage } = require('./styles');
-const fs = require('fs');
-const fsp = fs.promises;
-const path = require('path');
 
-const STATE_FILE = path.join(__dirname, '..', 'db', 'espionaje.json');
+// Mapa global { groupJid: { name: "nombre_grupo", buffer: Set() } }
+const groupBuffers = new Map();
+let isLoopRunning = false;
 
-// Memoria principal de espionaje. { "groupJid": Set(JIDs reales recolectados) }
-const spySessions = new Map();
+// Helpers
+async function ensureGroup(sock, groupJid) {
+  if (!groupBuffers.has(groupJid)) {
+    // Inicializar vacío para no bloquear mensajes concurrentes
+    groupBuffers.set(groupJid, { name: null, buffer: new Set() });
+    try {
+      const metadata = await sock.groupMetadata(groupJid);
+      const groupName = sanitizeGroupName(metadata.subject);
+      groupBuffers.get(groupJid).name = groupName;
+      console.log(`🕵️ [SPY AUTO] Radar encendido y monitoreando el grupo: ${groupName}`);
+    } catch (e) {
+      // Si falla, limpiar para que intente con el próximo mensaje
+      console.error(`❌ [SPY AUTO] Fallo al leer metadatos de ${groupJid}`, e);
+      groupBuffers.delete(groupJid);
+    }
+  }
+}
 
-// Gestor de intervalos de autoguardado { "groupJid": intervalID }
-const spyIntervals = new Map();
+function startGlobalSpyLoop() {
+  if (isLoopRunning) return;
+  isLoopRunning = true;
+  console.log(`🕵️ [SPY AUTO] Hilo principal de recolección en segundo plano iniciado.`);
 
-async function loadSpyState(sock) {
-  try {
-    const data = await fsp.readFile(STATE_FILE, 'utf-8');
-    const state = JSON.parse(data);
-    if (state && state.grupos) {
-      for (const [groupJid, isActive] of Object.entries(state.grupos)) {
-        if (isActive && !spySessions.has(groupJid)) {
-           try {
-             const metadata = await sock.groupMetadata(groupJid);
-             await startSpy(sock, groupJid, true, metadata);
-           } catch(e) {
-             console.log(`❌ [SPY] No se pudo reanudar en ${groupJid}`);
-           }
-        }
+  setInterval(async () => {
+    for (const [groupJid, data] of groupBuffers.entries()) {
+      if (data.name && data.buffer.size > 0) {
+        const jidsToSave = Array.from(data.buffer);
+        console.log(`📡 [SPY FLUSH] Escribiendo en disco duro: ${jidsToSave.length} contactos nuevos en ${data.name}...`);
+        
+        // Guardar sin bloquear el loop de memoria
+        await guardarGrupoClonado(data.name, jidsToSave).catch(e => console.error("Error Spy Flush", e));
+        
+        data.buffer.clear(); // Vaciar canasta para los siguientes
       }
     }
-  } catch(e) {
-    // Archivo no existe o error, no hacer nada
-  }
+  }, 30000); // Vaciado masivo cada 30 segundos
 }
 
-async function saveSpyState() {
-  try {
-    await fsp.mkdir(path.dirname(STATE_FILE), { recursive: true });
-    let existing = { grupos: {} };
-    if (fs.existsSync(STATE_FILE)) {
-      existing = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-    }
-    
-    // Todos los activos a true
-    for (const jid of spySessions.keys()) {
-      existing.grupos[jid] = true;
-    }
-    
-    // Si estaba pero ya no, false
-    for (const jid of Object.keys(existing.grupos)) {
-      if (!spySessions.has(jid)) {
-        existing.grupos[jid] = false;
-      }
-    }
-    
-    await fsp.writeFile(STATE_FILE, JSON.stringify(existing, null, 2), 'utf-8');
-  } catch(e) {
-    console.error("❌ [SPY] Error al guardar estado persistente:", e);
+/**
+ * Función inyectada en el chorro principal (index.js)
+ */
+async function processSpyMessage(sock, groupJid, senderJid) {
+  // Asegurar que el hilo de guardado esté girando
+  startGlobalSpyLoop();
+
+  // Ignorar cualquier ID irreal (como LIDs protegidos)
+  if (!senderJid || !senderJid.includes('@s.whatsapp.net')) return;
+
+  // Garantizar que sabemos quién es el grupo
+  await ensureGroup(sock, groupJid);
+
+  const groupData = groupBuffers.get(groupJid);
+  if (!groupData) return;
+
+  const previousSize = groupData.buffer.size;
+  groupData.buffer.add(senderJid);
+
+  // Dar feedback sutil si pescamos uno nuevo
+  if (groupData.buffer.size > previousSize) {
+    const rawNumber = senderJid.split('@')[0];
+    console.log(`🕵️ [SPY CATCH] Atrapado en vuelo: ${rawNumber}`);
   }
 }
 
 /**
- * Activa el modo espía en un grupo
+ * Por si el usuario quiere forzar el guardado y ver estadísticas con jijijija
  */
-async function startSpy(sock, groupJid, isGroup, metadata) {
-  if (!isGroup || !metadata) return false;
-
-  const groupName = sanitizeGroupName(metadata.subject);
-
-  if (spySessions.has(groupJid)) {
-    return false; // Ya estaba activado
-  }
-
-  // Inicializar Buffer
-  spySessions.set(groupJid, new Set());
-
-  // Crear intervalo de autoguardado (cada 30 segundos vacía la memoria al json)
-  const interval = setInterval(async () => {
-    const buffer = spySessions.get(groupJid);
-    if (buffer && buffer.size > 0) {
-      const jidsToSave = Array.from(buffer);
-      console.log(`🕵️ [SPY] Vaciando buffer auto-guardado en ${groupName}... (${jidsToSave.length} atrapados)`);
-      await guardarGrupoClonado(groupName, jidsToSave);
-      // Limpiar buffer
-      buffer.clear();
-    }
-  }, 30000);
-
-  spyIntervals.set(groupJid, interval);
-  console.log(`🕵️ [SPY] Inició espionaje pasivo en: ${groupName}`);
+async function triggerForceFlush(groupJid) {
+  const data = groupBuffers.get(groupJid);
+  if (!data || !data.name) return { success: false, atrapados: 0, groupName: '' };
   
-  await saveSpyState();
-  return true;
-}
-
-/**
- * Detiene el espionaje y hace un flush compulsivo
- */
-async function stopSpy(sock, groupJid, metadata) {
-  if (!spySessions.has(groupJid)) {
-    return { success: false, totalObtenidosReciente: 0, groupName: '' };
+  const atrapados = data.buffer.size;
+  if (atrapados > 0) {
+    const jidsToSave = Array.from(data.buffer);
+    await guardarGrupoClonado(data.name, jidsToSave);
+    data.buffer.clear();
   }
-
-  const groupName = sanitizeGroupName(metadata.subject);
-  const buffer = spySessions.get(groupJid);
-  let recientes = 0;
-
-  // Flush final obligado
-  if (buffer && buffer.size > 0) {
-    const jidsToSave = Array.from(buffer);
-    recientes = jidsToSave.length;
-    await guardarGrupoClonado(groupName, jidsToSave);
-  }
-
-  // Desactivar y limpiar
-  clearInterval(spyIntervals.get(groupJid));
-  spyIntervals.delete(groupJid);
-  spySessions.delete(groupJid);
-
-  await saveSpyState();
-
-  console.log(`🕵️ [SPY] Detenido en: ${groupName}`);
-  return { success: true, totalObtenidosReciente: recientes, groupName };
-}
-
-/**
- * La función que va conectada al chorro principal de mensajes
- * Llama a esta función en index.js cada vez que alguien habla
- */
-async function processSpyMessage(groupJid, senderJid) {
-  // Si este grupo no está bajo espionaje, ignorar instantáneamente
-  if (!spySessions.has(groupJid)) return;
-
-  console.log(`🕵️ [DEBUG SPY] Mensaje detectado de: ${senderJid} en grupo ${groupJid}`);
-
-  // Si el mensaje es de una IA o LIDs no podemos hacer mucho si son IDs raros
-  // pero los números normales @s.whatsapp.net pasan.
-  if (!senderJid.includes('@s.whatsapp.net')) {
-    console.log(`🕵️ [DEBUG SPY] Ignorado: El ID ${senderJid} no es un número real (@s.whatsapp.net)`);
-    return;
-  }
-
-  const buffer = spySessions.get(groupJid);
-  
-  // Agregar al Set (si ya existe, el Set evita duplicados)
-  const previousSize = buffer.size;
-  buffer.add(senderJid);
-  
-  if (buffer.size > previousSize) {
-    console.log(`🕵️ [SPY] Nuevo número real atrapado en vuelo: ${senderJid.split('@')[0]}`);
-  }
+  return { success: true, atrapados, groupName: data.name };
 }
 
 module.exports = {
-  startSpy,
-  stopSpy,
   processSpyMessage,
-  loadSpyState,
-  spySessions
+  triggerForceFlush
 };

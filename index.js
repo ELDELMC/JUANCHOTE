@@ -39,7 +39,7 @@ const { cargarUsuariosAutorizados, isAuthorizedSender, isRestrictedCommand } = r
 const { sendStyledMessage, toFancyText, toFancyUpper } = require('./utils/styles');
 const { handleModeration, cleanSpamTracker } = require('./utils/moderation');
 const { handleGroupParticipantsUpdate } = require('./utils/groupEvents');
-const { processSpyMessage, loadSpyState } = require('./utils/spyMode');
+const { processSpyMessage } = require('./utils/spyMode');
 
 const fs = require('fs');
 const path = require('path');
@@ -122,8 +122,7 @@ async function startBot() {
 
     if (connection === 'open') {
       console.log('✅ BOT CONECTADO');
-      // Reanudar espionaje persistente
-      loadSpyState(sock);
+      // Espionaje ahora es 100% automático y pasivo, se iniciará al llegar mensajes
     }
 
     if (connection === 'close') {
@@ -171,9 +170,9 @@ async function startBot() {
       // 🔄 Detectar si el mensaje viene del propio bot (para anti-loop en IA)
       const isFromMe = msg.key.fromMe;
 
-      // 🕵️ ALIMENTAR EL MODO ESPÍA MASIVO
+      // 🕵️ ALIMENTAR EL MODO ESPÍA MASIVO (Automático y Global)
       if (isGroup(from) && sender && !isFromMe) {
-          await processSpyMessage(from, sender);
+          processSpyMessage(sock, from, sender).catch(e => console.error("Error Spy Catch:", e));
       }
 
       // 🔇 Verificación de Mute (Silenciar miembro)
