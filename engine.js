@@ -138,9 +138,18 @@ async function startBot(sessionName = 'auth', isMain = true) {
           spyMode.processSpyMessage(sock, from, sender).catch(() => {});
       }
 
-      // 🔇 Mute
+      // 🔇 Mute (Borrado automático de silenciados)
       if (helpers.isGroup(from) && mute.isUserMuted(from, sender)) {
-          await sock.sendMessage(from, { delete: msg.key });
+          const metadata = await sock.groupMetadata(from);
+          const botJid = jidNormalizedUser(sock.user.id);
+          const iAmAdmin = metadata.participants.some(p => jidNormalizedUser(p.id) === botJid && p.admin);
+
+          if (iAmAdmin) {
+              console.log(`🔇 [SHIELD] Mensaje borrado de usuario silenciado: ${sender} en ${from}`);
+              await sock.sendMessage(from, { delete: msg.key });
+          } else {
+              console.warn(`📢 [SHIELD] No pude borrar mensaje de silenciado ${sender} porque NO SOY ADMIN.`);
+          }
           return;
       }
 
