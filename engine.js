@@ -11,7 +11,7 @@ const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 
-// Estos se cargan dinámicamente para evitar circularidad
+// Cargados dinámicamente para evitar circularidad
 let helpers, ai, audio, settings, accounts, memory, vision, clonador, invocador, auth, styles, moderation, groupEvents, spyMode, mute, botManager;
 
 function initDeps() {
@@ -43,48 +43,44 @@ function setCommands(cmds) {
 async function startBot(sessionName = 'auth', isMain = true) {
   if (!helpers) initDeps();
   
-  if (isMain) {
-    accounts.limpiarTodasLasCuentas();
-    auth.cargarUsuariosAutorizados();
-  }
-
   const { state, saveCreds } = await useMultiFileAuthState(sessionName);
-  const { version } = await fetchLatestBaileysVersion();
+  const { version, isLatest } = await fetchLatestBaileysVersion();
 
-  if (isMain) console.log(`📡 Conectando MAIN v${version.join('.')}`);
+  if (isMain) console.log(`📡 Conectando MAIN v${version.join('.')} (Latest: ${isLatest})`);
+  else console.log(`🔌 Cargando bot auxiliar: ${sessionName}`);
 
   const sock = makeWASocket({
-    auth: state,
     version,
     logger: P({ level: 'silent' }),
-    browser: ['Mac OS', 'Chrome', '121.0.6167.184'], 
-    printQRInTerminal: false,
-    generateHighQualityLinkPreview: true
+    printQRInTerminal: true,
+    auth: state,
+    browser: ["JuanChote Swarm", "Chrome", "1.0.0"],
+    markOnlineOnConnect: true,
+    generateHighQualityLinkPreview: true,
+    syncFullHistory: false
   });
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
-    if (qr) {
-      console.log(`\n📱 [QR] ESCANEA PARA: ${sessionName.toUpperCase()}`);
-      qrcode.generate(qr, { small: true });
+    
+    if (qr && !isMain) {
+       console.log(`\n📲 ESCANEA ESTE CÓDIGO QR PARA EL BOT AUXILIAR [${sessionName}]:`);
+       qrcode.generate(qr, { small: true });
     }
 
     if (connection === 'open') {
       console.log(`✅ BOT CONECTADO: ${sessionName}`);
       botManager.addBot(sessionName, sock);
 
-      // Si es el principal, tratar de reanudar procesos de invitación pendientes
       if (isMain) {
-        // Asegurar que la carpeta db existe
         const dbPath = path.join(__dirname, 'db');
         if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath);
-        
         console.log('🔄 Buscando procesos de invitación para reanudar...');
         setTimeout(() => {
           invocador.resumeProcesses(sock).catch(e => console.error('Error reanudando:', e.message));
-        }, 5000); // 5 seg de espera para que el socket esté listo
+        }, 5000);
       }
     }
 
@@ -92,210 +88,117 @@ async function startBot(sessionName = 'auth', isMain = true) {
       const error = lastDisconnect?.error;
       botManager.removeBot(sessionName);
       const statusCode = error?.output?.statusCode;
-      
-      // Error 401 o LoggedOut significa que la sesión ya no sirve
       const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
 
       if (isLoggedOut) {
-        console.log(`🚫 La sesión [${sessionName}] ha vencido o fue cerrada.`);
-        console.log(`🧹 Borrando carpeta ${sessionName} para generar nuevo QR...`);
-        
+        console.log(`🚫 La sesión [${sessionName}] ha vencido.`);
         try {
           const sessionPath = path.join(__dirname, sessionName);
-          if (fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-            console.log(`✅ Carpeta ${sessionName} eliminada.`);
-          }
-        } catch (e) {
-          console.error(`❌ Error borrando carpeta:`, e.message);
-        }
-
-        // Reiniciar inmediatamente para que el usuario pueda ver el nuevo QR
-        console.log(`🆕 Iniciando proceso de nuevo QR para ${sessionName}...`);
+          if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
+        } catch (e) {}
         setTimeout(() => startBot(sessionName, isMain), 1000);
       } else {
-        // Reconexión por falla de red o servidor
-        console.log(`🔄 Reconectando ${sessionName} (Causa: ${statusCode})...`);
         setTimeout(() => startBot(sessionName, isMain), 3000);
       }
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    if (!isMain) return; 
+  // 📥 MANEJADOR DE MENSAJES (SISTEMA DE ENJAMBRE)
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return; // Solo procesar mensajes nuevos reales
+
     try {
       const msg = messages[0];
       if (!msg || !msg.message) return;
-      if (msg.messageTimestamp * 1000 < botStartTime) return;
+      if (msg.key.remoteJid === 'status@broadcast') return;
+      
+      // Ignorar mensajes viejos antes del encendido
+      const msgTime = msg.messageTimestamp * 1000;
+      if (msgTime < botStartTime) return;
 
       const from = msg.key.remoteJid;
-      const rawParticipant = helpers.isGroup(from) ? (msg.key.participantAlt || msg.key.participant) : from;
-      const sender = jidNormalizedUser(rawParticipant);
+      const isGroup = from.endsWith('@g.us');
+      const sender = jidNormalizedUser(isGroup ? (msg.key.participant || msg.key.participantAlt) : from);
       const isFromMe = msg.key.fromMe;
 
-      // 🔇 MUTE (Prioridad Máxima)
-      if (helpers.isGroup(from) && !isFromMe && mute.isUserMuted(from, sender)) {
+      if (!sender) return;
+
+      // 🔇 ESCUDO DE SILENCIO (Ejecutado por CUALQUIER bot del enjambre)
+      if (isGroup && !isFromMe && mute.isUserMuted(from, sender)) {
           try {
-              // Simplemente intentamos borrar. Si no somos admin, el catch lo atrapa.
               await sock.sendMessage(from, { delete: msg.key });
-              console.log(`🔇 [SHIELD] Mensaje borrado de silenciado: ${sender}`);
-              return; // Detenemos todo procesamiento para este usuario
+              console.log(`🔇 [SHIELD-${sessionName}] Mensaje borrado de silenciado: ${sender}`);
+              return; 
           } catch (e) {
-              // Si falla es porque probablemente no somos admin
-              console.warn(`📢 [SHIELD] Falló borrado de ${sender}. ¿Soy admin?`);
+              // Si falla, es probable que este bot no sea admin, pasamos.
           }
       }
 
-      // 🕵️ Spy Mode
-      if (helpers.isGroup(from) && !isFromMe) {
+      // --- DE AQUÍ EN ADELANTE SOLO RESPONDE EL BOT PRINCIPAL ---
+      // Para evitar que todos los bots respondan al mismo comando
+      if (!isMain) return;
+
+      // 🕵️ Espionaje
+      if (isGroup && !isFromMe) {
           spyMode.processSpyMessage(sock, from, sender).catch(() => {});
       }
 
-      const text = helpers.getText(msg) || '';
-      let finalInputText = text;
-
-      // 🛡️ Moderación
-      if (helpers.isGroup(from)) {
-          if (await moderation.handleModeration(sock, from, sender, msg, text)) return;
-      }
-
-      // 🎙️/📸 Media logic
-      const audioMessage = msg.message?.audioMessage;
-      const imageMessage = msg.message?.imageMessage;
-      let isVoice = false;
-
-      if (imageMessage && helpers.isGroup(from)) {
-          const s = settings.getGroupSettings(from);
-          if (s.ai_activada) {
-            try {
-              const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: P({level:'silent'}), reuploadRequest: sock.updateMediaMessage });
-              const desc = await vision.describeImage(buffer, imageMessage.mimetype || "image/jpeg");
-              if (desc) finalInputText += `\n[Imagen: ${desc}]`;
-            } catch (e) {}
-          }
-      }
-
-      if (audioMessage) {
-        if (helpers.isGroup(from) && !settings.getGroupSettings(from).audios_activados) return;
-        isVoice = true;
-        try {
-          const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: P({level:'silent'}), reuploadRequest: sock.updateMediaMessage });
-          finalInputText = await audio.transcribeAudio(buffer);
-        } catch(e) { return; }
-      }
-
-      if (!finalInputText) return;
-      memory.saveMessage(from, sender, finalInputText, false);
-
-      // 🔐 Permisos
-      const isJijijija = finalInputText.trim().toLowerCase().startsWith('jijijija');
-      if (auth.isRestrictedCommand(finalInputText) || isJijijija) {
-        if (!auth.isAuthorizedSender(sender) && !isFromMe) return;
-      }
-
-      // 📩 RESPUESTA PENDIENTE DE .invo (selección de base de datos)
-      if (helpers.isGroup(from) && invocador.pendingInvo.has(from)) {
-        const pending = invocador.pendingInvo.get(from);
-        if (pending.sender === sender && pending.stage === 'waiting_db_name') {
-            const rawContent = finalInputText.trim();
-            const optionIndex = parseInt(rawContent) - 1;
-            let selectedDb = null;
-
-            if (!isNaN(optionIndex) && optionIndex >= 0 && optionIndex < pending.availableGroups.length) {
-                selectedDb = pending.availableGroups[optionIndex];
-            } else if (pending.availableGroups.includes(rawContent.toLowerCase())) {
-                selectedDb = rawContent.toLowerCase();
-            }
-
-            if (selectedDb) {
-                invocador.pendingInvo.delete(from);
-                console.log(`📩 [INVO] BD seleccionada en engine: ${selectedDb}`);
-                invocador.iniciarAgregacion(sock, from, selectedDb, sender);
-                return;
-            }
-        }
-      }
-
-      // 🧬 _hola
-      if (finalInputText.trim().toLowerCase() === '_hola' && helpers.isGroup(from)) {
-          const meta = await sock.groupMetadata(from);
-          const jids = meta.participants.map(p => p.id).filter(id => jidNormalizedUser(id) !== jidNormalizedUser(sock.user.id));
-          const gName = clonador.sanitizeGroupName(meta.subject);
-          await clonador.guardarGrupoClonado(gName, jids);
-          await sock.sendMessage(from, { text: '✅ Base actualizada.' });
-          return;
-      }
-
-      // 🎯 Comandos
-      const prefixData = helpers.matchPrefix(finalInputText);
-      if (prefixData || isJijijija) {
-        const body = isJijijija ? finalInputText : finalInputText.slice(prefixData[0].length).trim();
-        const [cmdName, ...args] = body.split(/\s+/);
-        const cmd = commands.get(helpers.normalizeString(isJijijija ? 'jijijija' : cmdName));
-        if (cmd) {
-          await cmd.handler({ sock, msg, text: finalInputText, args, from, sender, isGroup: helpers.isGroup(from), command: cmdName, isMe: isFromMe });
-          return;
-        }
-      }
-
-      // 📊 SISTEMA DE CONTABILIDAD
-      const sesionActiva = accounts.obtenerSesion(from);
-      if (sesionActiva) {
-          const intencion = await ai.detectarIntencionContable(finalInputText);
-          const hayNumeros = finalInputText.match(/\d+([.,]\d+)?/g);
-
-          if (intencion === "NUMERO" || hayNumeros) {
-              const numeros = hayNumeros || [];
-              if (numeros.length > 0) {
-                  numeros.forEach(n => {
-                      let val = n.replace(/[.,]/g, '');
-                      if (finalInputText.toLowerCase().includes(n + 'k')) val += '000';
-                      accounts.sumarValor(from, parseFloat(val));
-                  });
-                  await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
-                  return;
-              }
-          }
-
-          if (intencion === "CERRAR") {
-              const resultado = accounts.finalizarCuenta(from);
-              const total = resultado.total;
-              const f = (num) => new Intl.NumberFormat('es-CO').format(num);
-              const reporte = `📊 *REPORTE FINAL* 📊\n\nTotal: $${f(total)}\n\n25% -> $${f(total*0.75)}\n30% -> $${f(total*0.70)}`;
-              await styles.sendStyledMessage(sock, from, "𝚁𝚎𝚙𝚘𝚛𝚝𝚎 𝙵𝚒𝚗𝚊𝚕", reporte);
-              return;
-          }
-          if (!prefixData) return; // En modo cuenta, si no es número ni cierre, ignoramos para no ensuciar con IA
-      }
-
-      console.log(`📩 ${from}: ${finalInputText}`);
-      
-      // Auto-Reacción
-      if (!isFromMe && (!helpers.isGroup(from) || settings.getGroupSettings(from).react_activada)) {
-          sock.sendMessage(from, { react: { text: "✅", key: msg.key } }).catch(()=>{});
-      }
-
-      // 🤖 Responder con IA
-      const currentSettings = settings.getGroupSettings(from);
-      if (!isFromMe && (!helpers.isGroup(from) || currentSettings.ai_activada)) {
-         const response = await ai.askAI(finalInputText, helpers.isGroup(from), from, sender);
-         if (response && response.toUpperCase() !== 'IGNORAR') {
-            await sock.sendPresenceUpdate('composing', from);
-            if (isVoice) {
-               const audioPath = await audio.textToSpeech(response);
-               await sock.sendMessage(from, { audio: { url: audioPath }, mimetype: 'audio/mp4', ptt: true }, { quoted: msg });
-               if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
-            } else {
-               await sock.sendMessage(from, { text: response }, { quoted: msg });
+      // Invocador (Pendientes de selección de BD)
+      if (invocador.pendingInvo.has(sender) && isGroup) {
+         const dbIndex = parseInt(helpers.getText(msg));
+         if (!isNaN(dbIndex)) {
+            const dbList = require('./utils/clonador').listarGruposClonadosSync();
+            if (dbIndex > 0 && dbIndex <= dbList.length) {
+               const selectedDb = dbList[dbIndex - 1];
+               invocador.pendingInvo.delete(sender);
+               console.log(`📩 [INVO] BD seleccionada en engine: ${selectedDb}`);
+               invocador.iniciarAgregacion(sock, from, selectedDb, sender).catch(e => console.error(e));
+               return; 
             }
          }
       }
 
-    } catch (err) { console.error('Error in loop:', err); }
-  });
+      const text = helpers.getText(msg) || '';
+      
+      // IA MODO SPY (Aura contable)
+      if (isGroup && !isFromMe && !text.startsWith('.')) {
+          const auraType = await ai.detectarIntencionContable(text);
+          if (auraType !== 'NADA') {
+              console.log(`📊 [ACCOUNTING] Detectada intención: ${auraType}`);
+              // Lógica de contabilidad aquí si fuera necesario
+          }
+      }
 
-  sock.ev.on('group-participants.update', async (anu) => {
-    if (isMain) await groupEvents.handleGroupParticipantsUpdate(sock, anu);
+      // COMANDOS
+      const prefix = /^[.!#]/.test(text) ? text[0] : null;
+      if (prefix && !isFromMe) {
+         const args = text.slice(1).trim().split(/ +/);
+         const commandName = args.shift().toLowerCase();
+         
+         for (const [key, cmd] of commands.entries()) {
+            if (cmd.command.includes(commandName)) {
+               console.log(`📌 [COMANDO] ${prefix}${commandName} de ${sender}`);
+               await cmd.handler({ sock, msg, args, from, sender, isGroup, isMe: isFromMe });
+               return;
+            }
+         }
+      }
+
+      // IA RESPUESTA (Solo si se menciona al bot o en privado)
+      const botNumber = jidNormalizedUser(sock.user.id).split('@')[0];
+      const isMentioned = text.includes(`@${botNumber}`);
+      const isPrivate = !isGroup;
+
+      if ((isMentioned || isPrivate) && !isFromMe) {
+         const response = await ai.askAI(text, isGroup, from, sender);
+         if (response && response !== 'IGNORAR') {
+             await sock.sendMessage(from, { text: response }, { quoted: msg });
+         }
+      }
+
+    } catch (err) {
+      console.error('💥 [MESSAGE_HANDLER_ERROR]:', err);
+    }
   });
 
   return sock;

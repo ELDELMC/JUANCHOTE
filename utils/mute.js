@@ -3,17 +3,14 @@ const path = require('path');
 
 const MUTED_FILE = path.join(__dirname, '../data/muted.json');
 
-// Memory Cache
 let mutedUsers = null;
 
 function loadMuted() {
     if (mutedUsers) return mutedUsers;
-    
     if (fs.existsSync(MUTED_FILE)) {
         try {
             mutedUsers = JSON.parse(fs.readFileSync(MUTED_FILE, 'utf-8'));
         } catch (e) {
-            console.error("❌ Error cargando muted.json:", e);
             mutedUsers = {};
         }
     } else {
@@ -24,25 +21,17 @@ function loadMuted() {
 
 function saveMuted() {
     if (!mutedUsers) return;
-    fs.writeFile(MUTED_FILE, JSON.stringify(mutedUsers, null, 2), (err) => {
-        if (err) console.error("❌ Error al guardar asíncronamente en muted.json:", err);
-    });
+    if (!fs.existsSync(path.dirname(MUTED_FILE))) fs.mkdirSync(path.dirname(MUTED_FILE), { recursive: true });
+    fs.writeFileSync(MUTED_FILE, JSON.stringify(mutedUsers, null, 2));
 }
 
-/**
- * Calcula la fecha de expiración basada en un string de duración.
- * s=seg, m=min, h=hora, d=dia, M=mes, a=año
- */
 function parseDuration(durationStr) {
-    const match = durationStr.match(/^(\d+)([smhdMa])$/);
+    const match = durationStr.match(/^(\d+)([smhdMa]$/);
     if (!match) return null;
-
     const value = parseInt(match[1]);
     const unit = match[2];
-
     const now = Date.now();
     let ms = 0;
-
     switch (unit) {
         case 's': ms = value * 1000; break;
         case 'm': ms = value * 60 * 1000; break;
@@ -51,23 +40,18 @@ function parseDuration(durationStr) {
         case 'M': ms = value * 30 * 24 * 60 * 60 * 1000; break;
         case 'a': ms = value * 365 * 24 * 60 * 60 * 1000; break;
     }
-
     return now + ms;
 }
 
-/**
- * Mutea a un usuario en un grupo específico.
- */
 function muteUser(groupId, userId, expiration) {
     const muted = loadMuted();
     if (!muted[groupId]) muted[groupId] = {};
+    
+    // Guardamos el usuario. Si es LID o número, se guarda tal cual.
     muted[groupId][userId] = expiration;
     saveMuted();
 }
 
-/**
- * Desmutea a un usuario.
- */
 function unmuteUser(groupId, userId) {
     const muted = loadMuted();
     if (muted[groupId] && muted[groupId][userId]) {
@@ -78,19 +62,36 @@ function unmuteUser(groupId, userId) {
 }
 
 /**
- * Verifica si un usuario está silenciado. Limpia expirados automáticamente.
+ * 🔒 VERIFICACIÓN REFORZADA
+ * Compara IDs de forma flexible para atrapar LIDs y Números Reales
  */
 function isUserMuted(groupId, userId) {
     const muted = loadMuted();
-    if (!muted[groupId] || !muted[groupId][userId]) return false;
+    if (!muted[groupId]) return false;
 
-    const expiration = muted[groupId][userId];
-    if (Date.now() > expiration) {
-        unmuteUser(groupId, userId);
-        return false;
+    // 1. Verificación directa
+    if (muted[groupId][userId]) {
+        if (Date.now() > muted[groupId][userId]) {
+            unmuteUser(groupId, userId);
+            return false;
+        }
+        return true;
     }
 
-    return true;
+    // 2. Verificación por "Prefijo de número" (Para LIDs)
+    // A veces el mute se guarda como @lid y llega como @s.whatsapp.net o viceversa
+    const userPrefix = userId.split('@')[0];
+    for (const savedJid of Object.keys(muted[groupId])) {
+        if (savedJid.startsWith(userPrefix)) {
+            if (Date.now() > muted[groupId][savedJid]) {
+                unmuteUser(groupId, savedJid);
+                return false;
+            }
+            return true;
+        }
+    }
+
+    return false;
 }
 
 module.exports = {
