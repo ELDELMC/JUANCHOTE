@@ -1,4 +1,4 @@
-const { startBot } = require('../index');
+const { startBot } = require('../engine');
 const { sendStyledMessage } = require('../utils/styles');
 
 module.exports = {
