@@ -2,7 +2,7 @@ const { startBot } = require('../engine');
 const { sendStyledMessage } = require('../utils/styles');
 
 module.exports = {
-  command: ['addbot', 'nuevobot'],
+  command: ['addbot', 'adbot', 'nuevobot'],
   permission: 'admin',
   handler: async ({ sock, from }) => {
     // Generar un nombre de sesión único
