@@ -294,12 +294,15 @@ async function startBot() {
         return;
       }
 
-      // 📩 RESPUESTA PENDIENTE DE .invo (selección de base de datos)
+      // 📩 RESPUESTA PENDIENTE DE .invo (selección de base de datos y rango)
       if (isGroup(from) && pendingInvo.has(from)) {
         const pending = pendingInvo.get(from);
         if (pending.sender === sender && pending.stage === 'waiting_db_name') {
-          const rawInput = finalInputText.trim();
-          const optionIndex = parseInt(rawInput) - 1; // Convertir a índice (Ej: "1" -> 0)
+          const rawInput = finalInputText.trim().split(/\s+/);
+          const optionInput = rawInput[0];
+          const rangeInput = rawInput[1]; // ej: "1-50"
+
+          const optionIndex = parseInt(optionInput) - 1; // Convertir a índice (Ej: "1" -> 0)
           
           let selectedDb = null;
 
@@ -308,15 +311,15 @@ async function startBot() {
             selectedDb = pending.availableGroups[optionIndex];
           } 
           // Mantener retrocompatibilidad por si aún escriben el nombre exacto
-          else if (pending.availableGroups.includes(rawInput.toLowerCase())) {
-            selectedDb = rawInput.toLowerCase();
+          else if (pending.availableGroups.includes(optionInput.toLowerCase())) {
+            selectedDb = optionInput.toLowerCase();
           }
 
           if (selectedDb) {
             pendingInvo.delete(from);
-            console.log(`📩 [INVO] BD seleccionada: ${selectedDb} por ${sender}`);
-            // Iniciar agregación de forma asíncrona (no bloquea el handler)
-            iniciarAgregacion(sock, from, selectedDb, sender);
+            console.log(`📩 [INVO] BD seleccionada: ${selectedDb} por ${sender}. Rango: ${rangeInput || 'TOTAL'}`);
+            // Iniciar agregación pasando el rango
+            iniciarAgregacion(sock, from, selectedDb, sender, rangeInput);
             return;
           }
         }

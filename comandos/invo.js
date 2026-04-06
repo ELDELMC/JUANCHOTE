@@ -50,7 +50,9 @@ module.exports = {
       lista += `${i + 1}. ${g}\n`;
     });
     lista += '\nResponde con el NÚMERO de tu opción.\n';
-    lista += 'Ejemplo: 1';
+    lista += 'Ejemplo: 1\n';
+    lista += 'Para fragmentar (Botnet), responde con: Número Rango\n';
+    lista += 'Ejemplo: 1 50-100';
 
     await sendStyledMessage(sock, from, "𝚂𝚎𝚕𝚎𝚌𝚌𝚒𝚘𝚗𝚊𝚛 𝙱𝙳", lista);
 

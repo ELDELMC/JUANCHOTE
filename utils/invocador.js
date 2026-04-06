@@ -51,8 +51,9 @@ function sleep(ms) {
  * @param {string} groupJid - JID del grupo destino
  * @param {string} dbName - Nombre del archivo de grupo clonado (sin .json)
  * @param {string} sender - JID del admin que inició el proceso
+ * @param {string} rangeText - Texto de rango opcional ej: "1-50"
  */
-async function iniciarAgregacion(sock, groupJid, dbName, sender) {
+async function iniciarAgregacion(sock, groupJid, dbName, sender, rangeText) {
   // Verificar que no haya proceso activo
   if (currentInvoProcess.has(groupJid) && currentInvoProcess.get(groupJid).active) {
     await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚌𝚎𝚜𝚘 𝙰𝚌𝚝𝚒𝚟𝚘", "Ya hay un proceso de invitación activo en este grupo.\nUsa `.stopinvo` para detenerlo.");
@@ -87,10 +88,26 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
     }
 
     // 2. Cargar la base de datos
-    const jidsFromDb = await leerGrupoClonado(dbName);
+    let jidsFromDb = await leerGrupoClonado(dbName);
     if (jidsFromDb.length === 0) {
       await sendStyledMessage(sock, groupJid, "𝙱𝙳 𝚅𝚊𝚌í𝚊", `La base de datos ${dbName} está vacía.`);
       return;
+    }
+
+    // 2.5 APLICAR RANGO (Si existe)
+    let appliedRangeMsg = "Listado completo";
+    if (rangeText && rangeText.includes('-')) {
+      const parts = rangeText.split('-');
+      const strt = parseInt(parts[0]);
+      const nd = parseInt(parts[1]);
+      
+      if (!isNaN(strt) && !isNaN(nd) && strt > 0 && nd >= strt) {
+        // En código array es 0-indexed. El humano pone "1-50". 
+        // startIndex = 0, endIndex = 50.
+        const startIdx = strt - 1; 
+        jidsFromDb = jidsFromDb.slice(startIdx, nd);
+        appliedRangeMsg = `Fragmento de ${strt} a ${nd}`;
+      }
     }
 
     // 3. Filtrar: excluir los que ya están en el grupo
@@ -98,7 +115,7 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
     const toAdd = jidsFromDb.filter(jid => !currentMembers.has(jidNormalizedUser(jid)));
 
     if (toAdd.length === 0) {
-      await sendStyledMessage(sock, groupJid, "𝚂𝚒𝚗 𝙼𝚒𝚎𝚖𝚋𝚛𝚘𝚜", "Todos los miembros de esa base de datos ya están en este grupo.");
+      await sendStyledMessage(sock, groupJid, "𝚂𝚒𝚗 𝙼𝚒𝚎𝚖𝚋𝚛𝚘𝚜", "Todos los miembros de este listado ya están en el grupo.");
       return;
     }
 
@@ -115,7 +132,7 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
     };
     currentInvoProcess.set(groupJid, processState);
 
-    await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙸𝚗𝚒𝚌𝚒𝚊𝚍𝚊", `📦 BD: ${dbName}\n👥 Por agregar: ${toAdd.length}\n⏱️ Tiempo estimado: ~${Math.ceil(toAdd.length * 2.5)} min.\n\nCada agregación tiene delays aleatorios anti-ban.\nUsa .stopinvo para detener.`);
+    await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙸𝚗𝚒𝚌𝚒𝚊𝚍𝚊", `📦 BD: ${dbName}\n✂️ Rango: ${appliedRangeMsg}\n👥 Por agregar (filtrados): ${toAdd.length}\n⏱️ Tiempo estimado: ~${Math.ceil(toAdd.length * 2.5)} min.\n\nCada agregación tiene delays aleatorios anti-ban.\nUsa .stopinvo para detener.`);
 
     console.log(`\n🚀 [INVOCADOR] INICIO: ${toAdd.length} miembros desde ${dbName} → ${groupJid}`);
 
