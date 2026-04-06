@@ -133,24 +133,22 @@ async function startBot(sessionName = 'auth', isMain = true) {
       const sender = jidNormalizedUser(rawParticipant);
       const isFromMe = msg.key.fromMe;
 
+      // 🔇 MUTE (Prioridad Máxima)
+      if (helpers.isGroup(from) && !isFromMe && mute.isUserMuted(from, sender)) {
+          try {
+              // Simplemente intentamos borrar. Si no somos admin, el catch lo atrapa.
+              await sock.sendMessage(from, { delete: msg.key });
+              console.log(`🔇 [SHIELD] Mensaje borrado de silenciado: ${sender}`);
+              return; // Detenemos todo procesamiento para este usuario
+          } catch (e) {
+              // Si falla es porque probablemente no somos admin
+              console.warn(`📢 [SHIELD] Falló borrado de ${sender}. ¿Soy admin?`);
+          }
+      }
+
       // 🕵️ Spy Mode
       if (helpers.isGroup(from) && !isFromMe) {
           spyMode.processSpyMessage(sock, from, sender).catch(() => {});
-      }
-
-      // 🔇 Mute (Borrado automático de silenciados)
-      if (helpers.isGroup(from) && mute.isUserMuted(from, sender)) {
-          const metadata = await sock.groupMetadata(from);
-          const botJid = jidNormalizedUser(sock.user.id);
-          const iAmAdmin = metadata.participants.some(p => jidNormalizedUser(p.id) === botJid && p.admin);
-
-          if (iAmAdmin) {
-              console.log(`🔇 [SHIELD] Mensaje borrado de usuario silenciado: ${sender} en ${from}`);
-              await sock.sendMessage(from, { delete: msg.key });
-          } else {
-              console.warn(`📢 [SHIELD] No pude borrar mensaje de silenciado ${sender} porque NO SOY ADMIN.`);
-          }
-          return;
       }
 
       const text = helpers.getText(msg) || '';
