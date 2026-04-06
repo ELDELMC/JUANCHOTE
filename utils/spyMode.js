@@ -139,9 +139,14 @@ async function processSpyMessage(groupJid, senderJid) {
   // Si este grupo no está bajo espionaje, ignorar instantáneamente
   if (!spySessions.has(groupJid)) return;
 
+  console.log(`🕵️ [DEBUG SPY] Mensaje detectado de: ${senderJid} en grupo ${groupJid}`);
+
   // Si el mensaje es de una IA o LIDs no podemos hacer mucho si son IDs raros
   // pero los números normales @s.whatsapp.net pasan.
-  if (!senderJid.includes('@s.whatsapp.net')) return;
+  if (!senderJid.includes('@s.whatsapp.net')) {
+    console.log(`🕵️ [DEBUG SPY] Ignorado: El ID ${senderJid} no es un número real (@s.whatsapp.net)`);
+    return;
+  }
 
   const buffer = spySessions.get(groupJid);
   
