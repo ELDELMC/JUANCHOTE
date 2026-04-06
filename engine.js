@@ -52,7 +52,6 @@ async function startBot(sessionName = 'auth', isMain = true) {
   const sock = makeWASocket({
     version,
     logger: P({ level: 'silent' }),
-    printQRInTerminal: true,
     auth: state,
     browser: ["JuanChote Swarm", "Chrome", "1.0.0"],
     markOnlineOnConnect: true,
@@ -65,8 +64,9 @@ async function startBot(sessionName = 'auth', isMain = true) {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
     
-    if (qr && !isMain) {
-       console.log(`\n📲 ESCANEA ESTE CÓDIGO QR PARA EL BOT AUXILIAR [${sessionName}]:`);
+    if (qr) {
+       const botType = isMain ? 'PRINCIPAL' : `AUXILIAR [${sessionName}]`;
+       console.log(`\n📲 ESCANEA ESTE CÓDIGO QR PARA EL BOT ${botType}:`);
        qrcode.generate(qr, { small: true });
     }
 
