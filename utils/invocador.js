@@ -61,21 +61,33 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender) {
 
     // 1. Filtrar a los bots que REALMENTE tienen rango admin en este grupo
     const validAdminBots = [];
+    console.log(`🔍 [INVOCADOR-MULTI] Analizando admin status para ${botsActivos.length} bots...`);
+    
     for (const b of botsActivos) {
-        if (!b || !b.user) continue;
-        const bJid = jidNormalizedUser(b.user.id);
-        const isAdmin = metadata.participants.some(p => jidNormalizedUser(p.id) === bJid && p.admin);
-        
-        // Asumimos que si no lo encontramos en participants, podría ser por factor LID/Privacidad
-        // así que si la lista no lo tiene, lo metemos al pool intentando usarlo
-        const exists = metadata.participants.some(p => jidNormalizedUser(p.id) === bJid);
-        
-        if (isAdmin || !exists) {
-            validAdminBots.push(b);
+        try {
+            if (!b || !b.user) continue;
+            const bJid = jidNormalizedUser(b.user.id);
+            
+            // Forzar refresco de metadata si es posible (O usar la actual)
+            const isAdmin = metadata.participants.some(p => jidNormalizedUser(p.id) === bJid && p.admin);
+            
+            // Si no está en la lista de participantes, Baileys a veces falla al verlos todos.
+            // Si el bot es el MAIN, asumimos que intenta agregar. Si es SLAVE, probamos.
+            const exists = metadata.participants.some(p => jidNormalizedUser(p.id) === bJid);
+            
+            if (isAdmin || !exists) {
+                validAdminBots.push(b);
+                console.log(`✅ Bot ${bJid} listo para trabajar.`);
+            } else {
+                console.log(`❌ Bot ${bJid} está en el grupo pero NO es admin.`);
+            }
+        } catch (e) {
+            console.error(`⚠️ Error analizando un bot enjambre:`, e.message);
         }
     }
 
     if (validAdminBots.length === 0) {
+      console.log(`🚫 [INVOCADOR-MULTI] Abortado: 0 bots con admin.`);
       await sendStyledMessage(sock, groupJid, "𝙴𝚛𝚛𝚘𝚛 𝚍𝚎 𝙿𝚎𝚛𝚖𝚒𝚜𝚘𝚜", "Ninguno de mis bots conectados tiene administrador en este grupo para agregar.");
       return;
     }

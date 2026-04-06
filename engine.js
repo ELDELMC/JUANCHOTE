@@ -57,8 +57,9 @@ async function startBot(sessionName = 'auth', isMain = true) {
     auth: state,
     version,
     logger: P({ level: 'silent' }),
-    browser: ['Mac OS', 'Chrome', '121.0.6167.184'], // Browser más estable para evitar 405
-    printQRInTerminal: false
+    browser: ['Mac OS', 'Chrome', '121.0.6167.184'], 
+    printQRInTerminal: false,
+    generateHighQualityLinkPreview: true
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -89,7 +90,7 @@ async function startBot(sessionName = 'auth', isMain = true) {
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-    if (!isMain) return; // Esclavos no procesan comandos ni IA
+    if (!isMain) return; 
     try {
       const msg = messages[0];
       if (!msg || !msg.message) return;
@@ -119,7 +120,7 @@ async function startBot(sessionName = 'auth', isMain = true) {
           if (await moderation.handleModeration(sock, from, sender, msg, text)) return;
       }
 
-      // 🎙️/📸 Media logic...
+      // 🎙️/📸 Media logic
       const audioMessage = msg.message?.audioMessage;
       const imageMessage = msg.message?.imageMessage;
       let isVoice = false;
@@ -153,6 +154,29 @@ async function startBot(sessionName = 'auth', isMain = true) {
         if (!auth.isAuthorizedSender(sender) && !isFromMe) return;
       }
 
+      // 📩 RESPUESTA PENDIENTE DE .invo (selección de base de datos)
+      if (helpers.isGroup(from) && invocador.pendingInvo.has(from)) {
+        const pending = invocador.pendingInvo.get(from);
+        if (pending.sender === sender && pending.stage === 'waiting_db_name') {
+            const rawContent = finalInputText.trim();
+            const optionIndex = parseInt(rawContent) - 1;
+            let selectedDb = null;
+
+            if (!isNaN(optionIndex) && optionIndex >= 0 && optionIndex < pending.availableGroups.length) {
+                selectedDb = pending.availableGroups[optionIndex];
+            } else if (pending.availableGroups.includes(rawContent.toLowerCase())) {
+                selectedDb = rawContent.toLowerCase();
+            }
+
+            if (selectedDb) {
+                invocador.pendingInvo.delete(from);
+                console.log(`📩 [INVO] BD seleccionada en engine: ${selectedDb}`);
+                invocador.iniciarAgregacion(sock, from, selectedDb, sender);
+                return;
+            }
+        }
+      }
+
       // 🧬 _hola
       if (finalInputText.trim().toLowerCase() === '_hola' && helpers.isGroup(from)) {
           const meta = await sock.groupMetadata(from);
@@ -175,15 +199,49 @@ async function startBot(sessionName = 'auth', isMain = true) {
         }
       }
 
-      // (Lógica de contabilidad y AI omitida aquí por brevedad, sigue igual en el flujo principal)
-      // Pero por ahora, iniciemos el bot para verificar conexión
+      // 📊 SISTEMA DE CONTABILIDAD
+      const sesionActiva = accounts.obtenerSesion(from);
+      if (sesionActiva) {
+          const intencion = await ai.detectarIntencionContable(finalInputText);
+          const hayNumeros = finalInputText.match(/\d+([.,]\d+)?/g);
+
+          if (intencion === "NUMERO" || hayNumeros) {
+              const numeros = hayNumeros || [];
+              if (numeros.length > 0) {
+                  numeros.forEach(n => {
+                      let val = n.replace(/[.,]/g, '');
+                      if (finalInputText.toLowerCase().includes(n + 'k')) val += '000';
+                      accounts.sumarValor(from, parseFloat(val));
+                  });
+                  await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
+                  return;
+              }
+          }
+
+          if (intencion === "CERRAR") {
+              const resultado = accounts.finalizarCuenta(from);
+              const total = resultado.total;
+              const f = (num) => new Intl.NumberFormat('es-CO').format(num);
+              const reporte = `📊 *REPORTE FINAL* 📊\n\nTotal: $${f(total)}\n\n25% -> $${f(total*0.75)}\n30% -> $${f(total*0.70)}`;
+              await styles.sendStyledMessage(sock, from, "𝚁𝚎𝚙𝚘𝚛𝚝𝚎 𝙵𝚒𝚗𝚊𝚕", reporte);
+              return;
+          }
+          if (!prefixData) return; // En modo cuenta, si no es número ni cierre, ignoramos para no ensuciar con IA
+      }
+
       console.log(`📩 ${from}: ${finalInputText}`);
       
-      // Responder con IA...
+      // Auto-Reacción
+      if (!isFromMe && (!helpers.isGroup(from) || settings.getGroupSettings(from).react_activada)) {
+          sock.sendMessage(from, { react: { text: "✅", key: msg.key } }).catch(()=>{});
+      }
+
+      // 🤖 Responder con IA
       const currentSettings = settings.getGroupSettings(from);
-      if (!helpers.isGroup(from) || currentSettings.ai_activada) {
+      if (!isFromMe && (!helpers.isGroup(from) || currentSettings.ai_activada)) {
          const response = await ai.askAI(finalInputText, helpers.isGroup(from), from, sender);
          if (response && response.toUpperCase() !== 'IGNORAR') {
+            await sock.sendPresenceUpdate('composing', from);
             if (isVoice) {
                const audioPath = await audio.textToSpeech(response);
                await sock.sendMessage(from, { audio: { url: audioPath }, mimetype: 'audio/mp4', ptt: true }, { quoted: msg });
@@ -194,7 +252,7 @@ async function startBot(sessionName = 'auth', isMain = true) {
          }
       }
 
-    } catch (err) { console.error('Error message:', err); }
+    } catch (err) { console.error('Error in loop:', err); }
   });
 
   sock.ev.on('group-participants.update', async (anu) => {
