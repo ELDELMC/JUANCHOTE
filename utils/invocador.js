@@ -45,15 +45,7 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * 🚀 Inicia el proceso de agregación masiva
- * @param {object} sock - Socket de Baileys
- * @param {string} groupJid - JID del grupo destino
- * @param {string} dbName - Nombre del archivo de grupo clonado (sin .json)
- * @param {string} sender - JID del admin que inició el proceso
- * @param {string} rangeText - Texto de rango opcional ej: "1-50"
- */
-async function iniciarAgregacion(sock, groupJid, dbName, sender, rangeText) {
+async function iniciarAgregacion(sock, groupJid, dbName, sender) {
   // Verificar que no haya proceso activo
   if (currentInvoProcess.has(groupJid) && currentInvoProcess.get(groupJid).active) {
     await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚌𝚎𝚜𝚘 𝙰𝚌𝚝𝚒𝚟𝚘", "Ya hay un proceso de invitación activo en este grupo.\nUsa `.stopinvo` para detenerlo.");
@@ -61,53 +53,38 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender, rangeText) {
   }
 
   try {
-    // 1. Verificar que el bot sea admin
     const metadata = await sock.groupMetadata(groupJid);
-    const botJid = jidNormalizedUser(sock.user.id);
     
-    console.log(`\n🔍 [DEBUG ADMIN] Verificando rango del bot. Bot JID: ${botJid}`);
-    
-    const botParticipant = metadata.participants.find(p => {
-        const normJid = jidNormalizedUser(p.id);
-        if (normJid === botJid) {
-            return true;
+    // Obtener los bots activos del manager (El enjambre)
+    const { getAllBots } = require('./botManager');
+    const botsActivos = getAllBots();
+
+    // 1. Filtrar a los bots que REALMENTE tienen rango admin en este grupo
+    const validAdminBots = [];
+    for (const b of botsActivos) {
+        if (!b || !b.user) continue;
+        const bJid = jidNormalizedUser(b.user.id);
+        const isAdmin = metadata.participants.some(p => jidNormalizedUser(p.id) === bJid && p.admin);
+        
+        // Asumimos que si no lo encontramos en participants, podría ser por factor LID/Privacidad
+        // así que si la lista no lo tiene, lo metemos al pool intentando usarlo
+        const exists = metadata.participants.some(p => jidNormalizedUser(p.id) === bJid);
+        
+        if (isAdmin || !exists) {
+            validAdminBots.push(b);
         }
-        return false;
-    });
-    
-    // Si encontramos al bot y NO es admin, rechazamos
-    if (botParticipant && !botParticipant.admin) {
-      console.log(`❌ [DEBUG ADMIN] Bot encontrado pero sin admin.`);
-      await sendStyledMessage(sock, groupJid, "𝙴𝚛𝚛𝚘𝚛 𝚍𝚎 𝙿𝚎𝚛𝚖𝚒𝚜𝚘𝚜", "Necesito ser administrador de este grupo para agregar miembros.");
-      return;
     }
-    
-    // Si no lo encontramos (por privacidad LID), asumimos que sí puede e intentamos.
-    if (!botParticipant) {
-       console.log(`⚠️ [DEBUG ADMIN] Bot no encontrado en la lista (IDs LID). Saltando pre-verificación de admin...`);
+
+    if (validAdminBots.length === 0) {
+      await sendStyledMessage(sock, groupJid, "𝙴𝚛𝚛𝚘𝚛 𝚍𝚎 𝙿𝚎𝚛𝚖𝚒𝚜𝚘𝚜", "Ninguno de mis bots conectados tiene administrador en este grupo para agregar.");
+      return;
     }
 
     // 2. Cargar la base de datos
-    let jidsFromDb = await leerGrupoClonado(dbName);
+    const jidsFromDb = await leerGrupoClonado(dbName);
     if (jidsFromDb.length === 0) {
       await sendStyledMessage(sock, groupJid, "𝙱𝙳 𝚅𝚊𝚌í𝚊", `La base de datos ${dbName} está vacía.`);
       return;
-    }
-
-    // 2.5 APLICAR RANGO (Si existe)
-    let appliedRangeMsg = "Listado completo";
-    if (rangeText && rangeText.includes('-')) {
-      const parts = rangeText.split('-');
-      const strt = parseInt(parts[0]);
-      const nd = parseInt(parts[1]);
-      
-      if (!isNaN(strt) && !isNaN(nd) && strt > 0 && nd >= strt) {
-        // En código array es 0-indexed. El humano pone "1-50". 
-        // startIndex = 0, endIndex = 50.
-        const startIdx = strt - 1; 
-        jidsFromDb = jidsFromDb.slice(startIdx, nd);
-        appliedRangeMsg = `Fragmento de ${strt} a ${nd}`;
-      }
     }
 
     // 3. Filtrar: excluir los que ya están en el grupo
@@ -115,7 +92,7 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender, rangeText) {
     const toAdd = jidsFromDb.filter(jid => !currentMembers.has(jidNormalizedUser(jid)));
 
     if (toAdd.length === 0) {
-      await sendStyledMessage(sock, groupJid, "𝚂𝚒𝚗 𝙼𝚒𝚎𝚖𝚋𝚛𝚘𝚜", "Todos los miembros de este listado ya están en el grupo.");
+      await sendStyledMessage(sock, groupJid, "𝚂𝚒𝚗 𝙼𝚒𝚎𝚖𝚋𝚛𝚘𝚜", "Todos los miembros de esa base de datos ya están en este grupo.");
       return;
     }
 
@@ -132,11 +109,11 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender, rangeText) {
     };
     currentInvoProcess.set(groupJid, processState);
 
-    await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙸𝚗𝚒𝚌𝚒𝚊𝚍𝚊", `📦 BD: ${dbName}\n✂️ Rango: ${appliedRangeMsg}\n👥 Por agregar (filtrados): ${toAdd.length}\n⏱️ Tiempo estimado: ~${Math.ceil(toAdd.length * 2.5)} min.\n\nCada agregación tiene delays aleatorios anti-ban.\nUsa .stopinvo para detener.`);
+    await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙸𝚗𝚒𝚌𝚒𝚊𝚍𝚊", `📦 BD: ${dbName}\n👥 Por agregar: ${toAdd.length}\n🤖 Bots trabajando: ${validAdminBots.length}\n⏱️ Tiempo estimado optimizado.\n\nCada agregación tiene delays aleatorios anti-ban.\nUsa .stopinvo para detener.`);
 
-    console.log(`\n🚀 [INVOCADOR] INICIO: ${toAdd.length} miembros desde ${dbName} → ${groupJid}`);
+    console.log(`\n🚀 [INVOCADOR-MULTI] INICIO: ${toAdd.length} miembros desde ${dbName} → ${groupJid} usando ${validAdminBots.length} bots.`);
 
-    // 5. Bucle de agregación UNO POR UNO
+    // 5. Bucle de agregación (Round-Robin para distribuir carga entre bots)
     for (let i = 0; i < toAdd.length; i++) {
       const state = currentInvoProcess.get(groupJid);
       
@@ -148,58 +125,34 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender, rangeText) {
         return;
       }
 
+      // 🔄 Asignación de Trabajo (Load Balancing)
+      const workerBot = validAdminBots[i % validAdminBots.length];
       const jidToAdd = toAdd[i];
       const number = jidToAdd.split('@')[0];
 
-        try {
-        // Verificar si el bot sigue siendo admin cada 15 agregados
-        if (i > 0 && i % 15 === 0) {
-          const checkMeta = await sock.groupMetadata(groupJid);
-          const stillAdmin = checkMeta.participants.find(p => jidNormalizedUser(p.id) === botJid);
-          if (stillAdmin && !stillAdmin.admin) {
-            console.log(`🚨 [INVOCADOR] Bot perdió admin visible en ${groupJid}. Deteniendo.`);
-            await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚌𝚎𝚜𝚘 𝙳𝚎𝚝𝚎𝚗𝚒𝚍𝚘", "El bot ya no es administrador.");
-            currentInvoProcess.delete(groupJid);
-            return;
-          }
-        }
+      try {
+        // Verificar si este worker sigue siendo admin cada ronda grande (se omite para no sobrecargar)
 
-        // Verificar si existe en WhatsApp (opcional, puede fallar)
-        try {
-          const [result] = await sock.onWhatsApp(number);
-          if (!result?.exists) {
-            console.log(`⏭️ [INVOCADOR] ${number} no existe en WhatsApp. Saltando.`);
-            state.skipped++;
-            continue;
-          }
-        } catch (e) {
-          // Si onWhatsApp falla, intentar agregar de todos modos
-          console.log(`⚠️ [INVOCADOR] No se pudo verificar ${number}, intentando agregar...`);
-        }
-
-        // ➕ AGREGAR
-        console.log(`➕ [INVOCADOR] Agregando ${i + 1}/${toAdd.length}: ${number}`);
-        await sock.groupParticipantsUpdate(groupJid, [jidToAdd], "add");
+        // ➕ AGREGAR usando el bot seleccionado
+        console.log(`➕ [INVOCADOR-W${(i % validAdminBots.length)+1}] Agregando ${i + 1}/${toAdd.length}: ${number}`);
+        await workerBot.groupParticipantsUpdate(groupJid, [jidToAdd], "add");
         state.added++;
-        console.log(`✅ [INVOCADOR] ${number} agregado exitosamente.`);
+        console.log(`✅ [INVOCADOR] ${number} agregado exitosamente por Worker ${(i % validAdminBots.length)+1}.`);
 
       } catch (err) {
         state.failed++;
         const statusCode = err?.output?.statusCode || err?.data || err?.status || 'desconocido';
         console.error(`❌ [INVOCADOR] Error agregando ${number}: ${statusCode}`);
 
-        // Error de permisos reales a la hora de la acción
+        // Error de permisos reales a la hora de la acción (si le quitaron admin a este bot específico)
         if (statusCode === 403) {
-            console.log(`🚨 [INVOCADOR] WhatsApp retornó 403 Forbidden. El bot no tiene permisos.`);
-            await sendStyledMessage(sock, groupJid, "𝙴𝚛𝚛𝚘𝚛 𝚍𝚎 𝙿𝚎𝚛𝚖𝚒𝚜𝚘𝚜", "WhatsApp no me permite agregar miembros. Posiblemente no tenga rango de administrador.");
-            currentInvoProcess.delete(groupJid);
-            return; // Terminar el proceso
+            console.log(`🚨 [INVOCADOR] WhatsApp retornó 403 Forbidden para el Worker asociado.`);
         }
 
         // Rate limit
         if (statusCode === 429 || String(err).includes('rate')) {
           console.log(`⏸️ [INVOCADOR] Rate limit detectado. Pausa de 10 minutos...`);
-          await sendStyledMessage(sock, groupJid, "𝙿𝚊𝚞𝚜𝚊 𝚍𝚎 𝚂𝚎𝚐𝚞𝚛𝚒𝚍𝚊𝚍", `Pausa de 10 min por límite de velocidad en ${number}...`);
+          await sendStyledMessage(workerBot, groupJid, "𝙿𝚊𝚞𝚜𝚊 𝚍𝚎 𝚂𝚎𝚐𝚞𝚛𝚒𝚍𝚊𝚍", `Pausa de 10 min por límite de velocidad en ${number}...`);
           await sleep(600000); // 10 minutos
         }
       }
@@ -221,6 +174,8 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender, rangeText) {
 
       // ⏱️ Delay normal anti-ban entre cada agregación
       if (i < toAdd.length - 1) {
+        // En Multi-sesión, el delay se puede reducir MUY MUY sutilmente proporcional a la cantidad de bots?
+        // No, es mejor mantenerlo seguro para evitar chain-bans.
         const delay = getRandomDelay();
         console.log(`⏱️ [INVOCADOR] Esperando ${Math.ceil(delay / 1000)} seg antes de la siguiente...`);
         await sleep(delay);

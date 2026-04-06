@@ -70,42 +70,50 @@ cargarUsuariosAutorizados();
 // 🧹 Limpieza periódica de memoria (Anti-Spam) cada 5 minutos
 setInterval(cleanSpamTracker, 5 * 60 * 1000);
 
-async function startBot() {
-  // Limpiar cualquier sesión de cuenta que haya quedado abierta al reiniciar
-  limpiarTodasLasCuentas();
+const { addBot, removeBot } = require('./utils/botManager');
 
-  const { state, saveCreds } = await useMultiFileAuthState('auth');
-  const { version, isLatest } = await fetchLatestBaileysVersion();
-  console.log(`📡 Conectando con versión de WA v${version.join('.')} (Latest: ${isLatest})`);
-
-  // 🔍 Diagnóstico de APIs (Debug para BoxMineWorld)
-  console.log('\n--- 🔍 [DIAGNÓSTICO API] ---');
-  const keys = {
-      'GEMINI_API_KEY': process.env.GEMINI_API_KEY,
-      'GROQ_API_KEY': process.env.GROQ_API_KEY,
-      'GROQ_API_KEY_2': process.env.GROQ_API_KEY_2,
-      'OPENROUTER_API_KEY': process.env.OPENROUTER_API_KEY
-  };
-
-  for (const [name, value] of Object.entries(keys)) {
-      if (value) {
-          const isDotEnv = value === require('dotenv').config().parsed?.[name];
-          const source = isDotEnv ? '.env' : 'Sistema/Panel';
-          console.log(`✅ ${name}: CONFIGURADA (Origen: ${source})`);
-      } else {
-          console.log(`❌ ${name}: NO CONFIGURADA`);
-      }
+async function startBot(sessionName = 'auth', isMain = true) {
+  if (isMain) {
+    // Limpiar cualquier sesión de cuenta que haya quedado abierta al reiniciar
+    limpiarTodasLasCuentas();
   }
-  console.log('---------------------------\n');
+
+  const { state, saveCreds } = await useMultiFileAuthState(sessionName);
   
-  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
-    console.warn('⚠️ [ALERTA] No se detectó ninguna llave de IA (Groq, Gemini, OpenRouter) en el entorno. Revisa el archivo .env o las variables en el panel.');
+  if (isMain) {
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`📡 Conectando MAIN con versión de WA v${version.join('.')} (Latest: ${isLatest})`);
+
+    // 🔍 Diagnóstico de APIs (Debug para BoxMineWorld)
+    console.log('\n--- 🔍 [DIAGNÓSTICO API] ---');
+    const keys = {
+        'GEMINI_API_KEY': process.env.GEMINI_API_KEY,
+        'GROQ_API_KEY': process.env.GROQ_API_KEY,
+        'GROQ_API_KEY_2': process.env.GROQ_API_KEY_2,
+        'OPENROUTER_API_KEY': process.env.OPENROUTER_API_KEY
+    };
+
+    for (const [name, value] of Object.entries(keys)) {
+        if (value) {
+            const isDotEnv = value === require('dotenv').config().parsed?.[name];
+            const source = isDotEnv ? '.env' : 'Sistema/Panel';
+            console.log(`✅ ${name}: CONFIGURADA (Origen: ${source})`);
+        } else {
+            console.log(`❌ ${name}: NO CONFIGURADA`);
+        }
+    }
+    console.log('---------------------------\n');
+    
+    if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
+      console.warn('⚠️ [ALERTA] No se detectó ninguna llave de IA (Groq, Gemini, OpenRouter)');
+    }
+  } else {
+    console.log(`🔌 Conectando bot auxiliar: ${sessionName}`);
   }
 
   const sock = makeWASocket({
     auth: state,
-    version,
-    logger: P({ level: 'silent' }), // 📝 Cambiado a silent para limpiar logs, pero puedes usar 'info' si necesitas debugar
+    logger: P({ level: 'silent' }), 
     browser: ['Ubuntu', 'Chrome', '131.0.6778.85']
   });
 
@@ -116,42 +124,38 @@ async function startBot() {
 
     // 📱 Mostrar QR en consola
     if (qr) {
-      console.log('📱 Escanea este QR con WhatsApp:');
+      console.log(`📱 Escanea este QR para el bot: [${sessionName}]`);
       qrcode.generate(qr, { small: true });
     }
 
     if (connection === 'open') {
-      console.log('✅ BOT CONECTADO');
-      // Espionaje ahora es 100% automático y pasivo, se iniciará al llegar mensajes
+      console.log(`✅ BOT CONECTADO: ${sessionName}`);
+      addBot(sessionName, sock); // Registrar en el Manager
     }
 
     if (connection === 'close') {
       const error = lastDisconnect?.error;
+      console.log(`❌ Conexión cerrada en ${sessionName}`);
+      removeBot(sessionName);
 
-      console.log('❌ Conexión cerrada');
-
-      if (error) {
-        console.log('💥 ERROR DETALLADO:');
-        console.log(error);
-      }
+      if (error) console.log('💥 ERROR DETALLADO:', error);
 
       const statusCode = error?.output?.statusCode;
-
-      console.log('📊 Código:', statusCode);
-
-      const shouldReconnect =
-        statusCode !== DisconnectReason.loggedOut;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
       if (shouldReconnect) {
-        console.log('🔄 Reconectando...');
-        setTimeout(() => startBot(), 3000);
+        console.log(`🔄 Reconectando ${sessionName}...`);
+        setTimeout(() => startBot(sessionName, isMain), 3000);
       } else {
-        console.log('🚫 Sesión cerrada, escanea QR');
+        console.log(`🚫 Sesión cerrada en ${sessionName}, escanea QR`);
       }
     }
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
+    // 🛡️ ESCLAVOS IGNORAN TODO: Solo sirven para agregar
+    if (!isMain) return;
+
     try {
       const msg = messages[0];
       if (!msg || !msg.message) return;
@@ -171,7 +175,7 @@ async function startBot() {
       const isFromMe = msg.key.fromMe;
 
       // 🕵️ ALIMENTAR EL MODO ESPÍA MASIVO (Automático y Global)
-      if (isGroup(from) && sender && !isFromMe) {
+      if (isGroup(from) && !isFromMe) {
           processSpyMessage(sock, from, sender).catch(e => console.error("Error Spy Catch:", e));
       }
 
@@ -294,15 +298,12 @@ async function startBot() {
         return;
       }
 
-      // 📩 RESPUESTA PENDIENTE DE .invo (selección de base de datos y rango)
+      // 📩 RESPUESTA PENDIENTE DE .invo (selección de base de datos)
       if (isGroup(from) && pendingInvo.has(from)) {
         const pending = pendingInvo.get(from);
         if (pending.sender === sender && pending.stage === 'waiting_db_name') {
-          const rawInput = finalInputText.trim().split(/\s+/);
-          const optionInput = rawInput[0];
-          const rangeInput = rawInput[1]; // ej: "1-50"
-
-          const optionIndex = parseInt(optionInput) - 1; // Convertir a índice (Ej: "1" -> 0)
+          const rawInput = finalInputText.trim();
+          const optionIndex = parseInt(rawInput) - 1; // Convertir a índice (Ej: "1" -> 0)
           
           let selectedDb = null;
 
@@ -311,15 +312,15 @@ async function startBot() {
             selectedDb = pending.availableGroups[optionIndex];
           } 
           // Mantener retrocompatibilidad por si aún escriben el nombre exacto
-          else if (pending.availableGroups.includes(optionInput.toLowerCase())) {
-            selectedDb = optionInput.toLowerCase();
+          else if (pending.availableGroups.includes(rawInput.toLowerCase())) {
+            selectedDb = rawInput.toLowerCase();
           }
 
           if (selectedDb) {
             pendingInvo.delete(from);
-            console.log(`📩 [INVO] BD seleccionada: ${selectedDb} por ${sender}. Rango: ${rangeInput || 'TOTAL'}`);
-            // Iniciar agregación pasando el rango
-            iniciarAgregacion(sock, from, selectedDb, sender, rangeInput);
+            console.log(`📩 [INVO] BD seleccionada: ${selectedDb} por ${sender}`);
+            // Iniciar agregación de forma asíncrona (no bloquea el handler)
+            iniciarAgregacion(sock, from, selectedDb, sender);
             return;
           }
         }
@@ -509,8 +510,28 @@ async function startBot() {
 
   // 🚪 Bienvenida y Despedida (Middleware externo)
   sock.ev.on('group-participants.update', async (anu) => {
+    if (!isMain) return; // Esclavos no dan bienvenida
     await handleGroupParticipantsUpdate(sock, anu);
   });
 }
 
-startBot();
+// 🌐 Exportar para permitir instanciar más bots desde un comando
+module.exports = { startBot };
+
+// 🛡️ AUTO-INICIO ROBUSTO MULTI-SESIÓN
+function launchSystem() {
+  const allDirs = fs.readdirSync(__dirname).filter(d => d.startsWith('auth'));
+  console.log('🔄 Inicializando enjambre Multi-Bot. Sesiones vivas detectadas:', allDirs);
+  
+  // Siempre iniciar el principal
+  startBot('auth', true);
+
+  // Iniciar las sesiones hermanas/auxiliares si existen
+  for (const dir of allDirs) {
+    if (dir !== 'auth') {
+      setTimeout(() => startBot(dir, false), 5000); // Dar respiro de 5 segundos
+    }
+  }
+}
+
+launchSystem();
