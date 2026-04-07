@@ -248,7 +248,9 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender, isResuming = fa
 
       // Reporte de progreso cada 5 agregados
       if ((i + 1) % 5 === 0) {
-        await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚐𝚛𝚎𝚜𝚘", `➕ ${i + 1}/${allToAdd.length}\n✅ Exitosos: ${state.added}\n❌ Fallidos: ${state.failed}`);
+        try {
+          await sendStyledMessage(sock, groupJid, "𝙿𝚛𝚘𝚐𝚛𝚎𝚜𝚘", `➕ ${i + 1}/${allToAdd.length}\n✅ Exitosos: ${state.added}\n❌ Fallidos: ${state.failed}`);
+        } catch (e) {}
       }
 
       // Delay anti-ban
@@ -258,14 +260,24 @@ async function iniciarAgregacion(sock, groupJid, dbName, sender, isResuming = fa
 
     // ✅ Proceso completado
     console.log(`🏁 [INVO] Invocación completada en ${groupJid}. Agregados: ${state.added}, Fallidos: ${state.failed}`);
-    await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙲𝚘𝚖𝚙𝚕𝚎𝚝𝚊𝚍𝚊", `✅ Agregados: ${state.added}\n❌ Fallidos: ${state.failed}\n📦 BD: ${dbName}`);
+    try {
+      await sendStyledMessage(sock, groupJid, "𝙸𝚗𝚟𝚘𝚌𝚊𝚌𝚒ó𝚗 𝙲𝚘𝚖𝚙𝚕𝚎𝚝𝚊𝚍𝚊", `✅ Agregados: ${state.added}\n❌ Fallidos: ${state.failed}\n📦 BD: ${dbName}`);
+    } catch (e) {
+      console.warn(`⚠️ [INVO] No se pudo enviar mensaje final (conexión caída), pero el proceso terminó OK.`);
+    }
     currentInvoProcess.delete(groupJid);
     clearInvoState();
 
   } catch (err) {
-    console.error('💥 [INVOCADOR] Error crítico:', err);
-    currentInvoProcess.delete(groupJid);
-    clearInvoState();
+    const isConnectionError = err?.message?.includes('Connection Closed') || err?.output?.statusCode === 428;
+    if (isConnectionError) {
+      console.warn(`⚠️ [INVO] Conexión caída durante invocación. El proceso se reanudará al reconectar.`);
+      // NO limpiamos el estado para que se pueda reanudar
+    } else {
+      console.error('💥 [INVOCADOR] Error crítico:', err);
+      currentInvoProcess.delete(groupJid);
+      clearInvoState();
+    }
   }
 }
 
