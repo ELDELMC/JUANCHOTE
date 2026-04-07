@@ -1,62 +1,63 @@
 const { getGroupSettings } = require('./settings');
 const { getIsAdmin } = require('./helpers');
 const { sendStyledMessage } = require('./styles');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 /**
- * 🛡️ Middleware de Moderación
+ * 🛡️ Middleware de Moderación (Soporta Multi-Bot)
  * Maneja Antilink y Antispam para grupos.
- * @returns {Boolean} true si el mensaje fue manejado (eliminado/advertido), false si puede continuar.
+ * @returns {Boolean} true si el mensaje fue manejado, false si continuó.
  */
-async function handleModeration(sock, from, sender, msg, text) {
+async function handleModeration(sock, from, sender, msg, text, isMain = false) {
     const settings = getGroupSettings(from);
-    const isAdmin = await getIsAdmin(sock, from, sender);
+    const senderIsAdmin = await getIsAdmin(sock, from, sender);
+    
+    // Si el que envió el mensaje es admin, no hacemos nada
+    if (senderIsAdmin) return false;
+
+    const botJid = jidNormalizedUser(sock.user.id);
+    const metadata = await sock.groupMetadata(from);
+    const iAmAdmin = metadata.participants.some(p => jidNormalizedUser(p.id) === botJid && p.admin);
 
     // 🛑 Antilink
-    if (settings.antilink && !isAdmin) {
+    if (settings.antilink) {
         const urlRegex = /https?:\/\/(chat\.whatsapp\.com\/[^\s]+|whatsapp\.com\/[^\s]+)/gi;
         if (text.match(urlRegex)) {
-            console.log(`🚫 Enlace detectado de ${sender}. Eliminando...`);
-            await sock.sendMessage(from, { delete: msg.key });
-            await sendStyledMessage(sock, from, "𝙴𝚗𝚕𝚊𝚌𝚎 𝙿𝚛𝚘𝚑𝚒𝚋𝚒𝚍𝚘", `@${sender.split('@')[0]}, los enlaces están prohibidos en este grupo.`);
-            return true;
+            if (iAmAdmin) {
+                console.log(`🚫 [MOD-${botJid}] Enlace detectado de ${sender}. Borrando...`);
+                await sock.sendMessage(from, { delete: msg.key });
+                
+                // Solo el bot principal envía el mensaje de advertencia para no saturar el chat
+                if (isMain) {
+                    await sendStyledMessage(sock, from, "𝙴𝚗𝚕𝚊𝚌𝚎 𝙿𝚛𝚘𝚑𝚒𝚋𝚒𝚍𝚘", `@${sender.split('@')[0]}, los enlaces están prohibidos aquí.`);
+                }
+                return true;
+            } else {
+                console.warn(`📢 [MOD-${botJid}] Detecté un link pero NO SOY ADMIN en ${from}.`);
+            }
         }
     }
 
     // 🛑 Antispam
-    if (settings.antispam && !isAdmin) {
+    if (settings.antispam) {
         if (!global.spamTracker) global.spamTracker = {};
         if (!global.spamTracker[from]) global.spamTracker[from] = {};
 
         const now = Date.now();
         const userLog = global.spamTracker[from][sender] || [];
         const recentMsgs = userLog.filter(ts => now - ts < 60000);
-
         recentMsgs.push(now);
         global.spamTracker[from][sender] = recentMsgs;
 
         if (recentMsgs.length > 5) {
-            console.log(`🚫 Spam detectado de ${sender}.`);
-            await sock.sendMessage(from, { delete: msg.key });
-            return true;
+            if (iAmAdmin) {
+                await sock.sendMessage(from, { delete: msg.key });
+                return true;
+            }
         }
     }
 
     return false;
 }
 
-/**
- * Limpia el rastro de spam antiguo para evitar fugas de memoria
- */
-function cleanSpamTracker() {
-    if (!global.spamTracker) return;
-    const now = Date.now();
-    for (const group in global.spamTracker) {
-        for (const user in global.spamTracker[group]) {
-            global.spamTracker[group][user] = global.spamTracker[group][user].filter(ts => now - ts < 60000);
-            if (global.spamTracker[group][user].length === 0) delete global.spamTracker[group][user];
-        }
-        if (Object.keys(global.spamTracker[group]).length === 0) delete global.spamTracker[group];
-    }
-}
-
-module.exports = { handleModeration, cleanSpamTracker };
+module.exports = { handleModeration };

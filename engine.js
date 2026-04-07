@@ -103,16 +103,15 @@ async function startBot(sessionName = 'auth', isMain = true) {
     }
   });
 
-  // 📥 MANEJADOR DE MENSAJES (SISTEMA DE ENJAMBRE)
+  // 📥 MANEJADOR DE MENSAJES (DEFENSA MULTI-BOT)
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return; // Solo procesar mensajes nuevos reales
+    if (type !== 'notify') return;
 
     try {
       const msg = messages[0];
       if (!msg || !msg.message) return;
       if (msg.key.remoteJid === 'status@broadcast') return;
       
-      // Ignorar mensajes viejos antes del encendido
       const msgTime = msg.messageTimestamp * 1000;
       if (msgTime < botStartTime) return;
 
@@ -120,22 +119,29 @@ async function startBot(sessionName = 'auth', isMain = true) {
       const isGroup = from.endsWith('@g.us');
       const sender = jidNormalizedUser(isGroup ? (msg.key.participant || msg.key.participantAlt) : from);
       const isFromMe = msg.key.fromMe;
+      const text = helpers.getText(msg) || '';
 
       if (!sender) return;
 
-      // 🔇 ESCUDO DE SILENCIO (Ejecutado por CUALQUIER bot del enjambre)
-      if (isGroup && !isFromMe && mute.isUserMuted(from, sender)) {
-          try {
-              await sock.sendMessage(from, { delete: msg.key });
-              console.log(`🔇 [SHIELD-${sessionName}] Mensaje borrado de silenciado: ${sender}`);
-              return; 
-          } catch (e) {
-              // Si falla, es probable que este bot no sea admin, pasamos.
+      // 🛡️ ESCUDO DE DEFENSA (CUALQUIER BOT ADMIN ACTÚA)
+      if (isGroup && !isFromMe) {
+          
+          // 1. Silencio (Mute)
+          if (mute.isUserMuted(from, sender)) {
+              try {
+                  await sock.sendMessage(from, { delete: msg.key });
+                  console.log(`🔇 [SHIELD-${sessionName}] Mensaje borrado de silenciado: ${sender}`);
+                  return; 
+              } catch (e) {}
+          }
+
+          // 2. Moderación (Anti-Link, Anti-Spam)
+          if (await moderation.handleModeration(sock, from, sender, msg, text, isMain)) {
+              return;
           }
       }
 
-      // --- DE AQUÍ EN ADELANTE SOLO RESPONDE EL BOT PRINCIPAL ---
-      // Para evitar que todos los bots respondan al mismo comando
+      // --- FILTRO DE COMANDOS Y RESPUESTAS (SOLO BOT PRINCIPAL) ---
       if (!isMain) return;
 
       // 🕵️ Espionaje
@@ -143,40 +149,28 @@ async function startBot(sessionName = 'auth', isMain = true) {
           spyMode.processSpyMessage(sock, from, sender).catch(() => {});
       }
 
-      // Invocador (Pendientes de selección de BD)
+      // Invocador
       if (invocador.pendingInvo.has(sender) && isGroup) {
-         const dbIndex = parseInt(helpers.getText(msg));
+         const dbIndex = parseInt(text);
          if (!isNaN(dbIndex)) {
             const dbList = require('./utils/clonador').listarGruposClonadosSync();
             if (dbIndex > 0 && dbIndex <= dbList.length) {
                const selectedDb = dbList[dbIndex - 1];
                invocador.pendingInvo.delete(sender);
-               console.log(`📩 [INVO] BD seleccionada en engine: ${selectedDb}`);
                invocador.iniciarAgregacion(sock, from, selectedDb, sender).catch(e => console.error(e));
                return; 
             }
          }
       }
 
-      const text = helpers.getText(msg) || '';
-      
-      // IA MODO SPY (Aura contable)
-      if (isGroup && !isFromMe && !text.startsWith('.')) {
-          const auraType = await ai.detectarIntencionContable(text);
-          if (auraType !== 'NADA') {
-              console.log(`📊 [ACCOUNTING] Detectada intención: ${auraType}`);
-              // Lógica de contabilidad aquí si fuera necesario
-          }
-      }
-
-      // COMANDOS
       const prefix = /^[.!#]/.test(text) ? text[0] : null;
       if (prefix && !isFromMe) {
          const args = text.slice(1).trim().split(/ +/);
          const commandName = args.shift().toLowerCase();
          
+         const normalizedCommand = helpers.normalizeString(commandName);
          for (const [key, cmd] of commands.entries()) {
-            if (cmd.command.includes(commandName)) {
+            if (cmd.command.includes(commandName) || cmd.command.includes(normalizedCommand)) {
                console.log(`📌 [COMANDO] ${prefix}${commandName} de ${sender}`);
                await cmd.handler({ sock, msg, args, from, sender, isGroup, isMe: isFromMe });
                return;
@@ -184,12 +178,12 @@ async function startBot(sessionName = 'auth', isMain = true) {
          }
       }
 
-      // IA RESPUESTA (Solo si se menciona al bot o en privado)
+      // IA RESPUESTA
       const botNumber = jidNormalizedUser(sock.user.id).split('@')[0];
       const isMentioned = text.includes(`@${botNumber}`);
       const isPrivate = !isGroup;
 
-      if ((isMentioned || isPrivate) && !isFromMe) {
+      if ((isMentioned || isPrivate) && !isFromMe && text.length > 2) {
          const response = await ai.askAI(text, isGroup, from, sender);
          if (response && response !== 'IGNORAR') {
              await sock.sendMessage(from, { text: response }, { quoted: msg });
