@@ -1,12 +1,1 @@
-{
-  "120363407342648633@g.us": {
-    "active": true,
-    "stopped": false,
-    "added": 1,
-    "failed": 0,
-    "total": 1,
-    "dbName": "caraota",
-    "startTime": 1775521685967,
-    "currentIndex": 0
-  }
-}
+{}
