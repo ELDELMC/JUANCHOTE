@@ -1,19 +1,17 @@
 /**
  * 📩 COMANDO .invo
  * Lista las bases de datos de grupos clonados y espera
- * que el usuario responda con el nombre exacto para iniciar
+ * que el usuario responda con el número para iniciar
  * la agregación masiva.
  */
 
 const { listarGruposClonados } = require('../utils/clonador');
 const { pendingInvo, currentInvoProcess } = require('../utils/invocador');
-const { checkAdmin } = require('../utils/helpers');
 const { sendStyledMessage } = require('../utils/styles');
 
 module.exports = {
   command: ['invo', 'invocar', 'agregar'],
   handler: async ({ sock, from, sender, args, isGroup, isMe }) => {
-    // Solo grupos
     if (!isGroup) {
       return await sendStyledMessage(sock, from, "𝙴𝚛𝚛𝚘𝚛", "Este comando es exclusivo para grupos.");
     }
@@ -21,12 +19,12 @@ module.exports = {
     // Verificar permisos
     try {
       const { isAuthorizedSender } = require('../utils/auth');
-      
-      const isAdminCheck = isMe || isAuthorizedSender(sender);
-      if (!isAdminCheck) {
-        return; // Silencioso
+      if (!isMe && !isAuthorizedSender(sender)) {
+        console.log(`🚫 [INVO] ${sender} no está autorizado.`);
+        return;
       }
     } catch (e) {
+      console.error(`❌ [INVO] Error verificando permisos:`, e.message);
       return;
     }
 
@@ -43,7 +41,6 @@ module.exports = {
     }
 
     // Construir el menú con lista numerada
-    // Construir el menú con lista numerada
     let lista = '¿Desde qué base de datos quieres agregar miembros?\n\n';
     lista += 'Grupos clonados disponibles:\n';
     grupos.forEach((g, i) => {
@@ -54,9 +51,10 @@ module.exports = {
 
     await sendStyledMessage(sock, from, "𝚂𝚎𝚕𝚎𝚌𝚌𝚒𝚘𝚗𝚊𝚛 𝙱𝙳", lista);
 
-    // Guardar estado: esperando respuesta de este usuario en este grupo
-    pendingInvo.set(from, {
-      sender,
+    // ⚡ CLAVE: Guardamos por SENDER (usuario), no por grupo
+    // Así el engine puede encontrar la respuesta del usuario correcto
+    pendingInvo.set(sender, {
+      groupJid: from,
       timestamp: Date.now(),
       stage: 'waiting_db_name',
       availableGroups: grupos
@@ -66,11 +64,11 @@ module.exports = {
 
     // Auto-limpiar si no responde en 5 minutos
     setTimeout(() => {
-      const pending = pendingInvo.get(from);
-      if (pending && pending.sender === sender && pending.stage === 'waiting_db_name') {
-        pendingInvo.delete(from);
-        console.log(`⏰ [INVO] Timeout: Limpiando estado pendiente en ${from}`);
+      const pending = pendingInvo.get(sender);
+      if (pending && pending.stage === 'waiting_db_name') {
+        pendingInvo.delete(sender);
+        console.log(`⏰ [INVO] Timeout: Limpiando estado pendiente de ${sender}`);
       }
-    }, 300000); // 5 minutos
+    }, 300000);
   }
 };

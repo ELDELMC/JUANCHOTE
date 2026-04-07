@@ -149,15 +149,18 @@ async function startBot(sessionName = 'auth', isMain = true) {
           spyMode.processSpyMessage(sock, from, sender).catch(() => {});
       }
 
-      // Invocador
+      // Invocador (Respuesta a selección de BD)
       if (invocador.pendingInvo.has(sender) && isGroup) {
+         const pending = invocador.pendingInvo.get(sender);
          const dbIndex = parseInt(text);
          if (!isNaN(dbIndex)) {
             const dbList = require('./utils/clonador').listarGruposClonadosSync();
             if (dbIndex > 0 && dbIndex <= dbList.length) {
                const selectedDb = dbList[dbIndex - 1];
+               const targetGroup = pending.groupJid || from;
                invocador.pendingInvo.delete(sender);
-               invocador.iniciarAgregacion(sock, from, selectedDb, sender).catch(e => console.error(e));
+               console.log(`📩 [INVO] BD seleccionada: ${selectedDb} para grupo ${targetGroup}`);
+               invocador.iniciarAgregacion(sock, targetGroup, selectedDb, sender).catch(e => console.error('💥 [INVO]', e));
                return; 
             }
          }
