@@ -82,10 +82,25 @@ async function listarGruposClonados() {
   }
 }
 
+/**
+ * Versión SÍNCRONA de listarGruposClonados (para uso en engine.js)
+ */
+function listarGruposClonadosSync() {
+  try {
+    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+    return fs.readdirSync(DB_DIR)
+      .filter(f => f.endsWith('.json'))
+      .map(f => f.replace('.json', ''));
+  } catch (e) {
+    return [];
+  }
+}
+
 module.exports = {
   sanitizeGroupName,
   leerGrupoClonado,
   guardarGrupoClonado,
   listarGruposClonados,
+  listarGruposClonadosSync,
   DB_DIR
 };

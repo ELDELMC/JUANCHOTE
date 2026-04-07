@@ -4,41 +4,35 @@ const { sendStyledMessage } = require('./styles');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 /**
- * 🛡️ Middleware de Moderación (Soporta Multi-Bot)
- * Maneja Antilink y Antispam para grupos.
+ * 🛡️ Middleware de Moderación (Soporta Multi-Bot + LID)
  */
 async function handleModeration(sock, from, sender, msg, text, isMain = false) {
     const settings = getGroupSettings(from);
     
-    // Verificamos si el que envía es admin (para no borrarle nada)
+    // Verificamos si el que envía es admin
     const senderIsAdmin = await getIsAdmin(sock, from, sender);
     if (senderIsAdmin) return false;
 
-    // 🤖 Verificamos si YO soy admin
-    // Usamos jidNormalizedUser para limpiar el :1, :2 etc del ID del bot
-    const botJid = jidNormalizedUser(sock.user.id);
-    const metadata = await sock.groupMetadata(from);
+    // 🤖 Verificar si YO (este bot) soy admin
+    // El problema: sock.user.id = "573052274793@s.whatsapp.net"
+    // Pero en el grupo puedo aparecer como un LID completamente diferente
+    // Solución: intentar borrar directamente y dejar que el catch maneje el error
     
-    const botParticipant = metadata.participants.find(p => jidNormalizedUser(p.id) === botJid);
-    // IMPORTANTE: p.admin puede ser 'admin', 'superadmin' o undefined
-    const iAmAdmin = botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin');
-
     // 🛑 Antilink
     if (settings.antilink) {
         const urlRegex = /https?:\/\/(chat\.whatsapp\.com\/[^\s]+|whatsapp\.com\/[^\s]+)/gi;
         if (text.match(urlRegex)) {
-            if (iAmAdmin) {
-                console.log(`🚫 [MODERATOR-OK] Link borrado por ${botJid}`);
+            try {
                 await sock.sendMessage(from, { delete: msg.key });
+                console.log(`🚫 [ANTILINK-OK] Link borrado por bot ${jidNormalizedUser(sock.user.id)}`);
                 
                 if (isMain) {
                     await sendStyledMessage(sock, from, "𝙴𝚗𝚕𝚊𝚌𝚎 𝙿𝚛𝚘𝚑𝚒𝚋𝚒𝚍𝚘", `@${sender.split('@')[0]}, prohibido enviar enlaces de grupos aquí.`);
                 }
                 return true;
-            } else {
-                // Si el bot dice que no es admin y tú ves que sí es, 
-                // imprimiremos un log para debugear qué está viendo el bot.
-                console.warn(`📢 [DEBUG-ADMIN] El bot ${botJid} dice no tener rango. Rango actual detectado: ${botParticipant?.admin || 'ninguno'}`);
+            } catch (e) {
+                // Si falla, este bot no es admin. Otro del enjambre lo intentará.
+                console.warn(`📢 [ANTILINK] Bot no pudo borrar (probablemente no es admin).`);
             }
         }
     }
@@ -54,9 +48,11 @@ async function handleModeration(sock, from, sender, msg, text, isMain = false) {
         recentMsgs.push(now);
         global.spamTracker[from][sender] = recentMsgs;
 
-        if (recentMsgs.length > 5 && iAmAdmin) {
-            await sock.sendMessage(from, { delete: msg.key });
-            return true;
+        if (recentMsgs.length > 5) {
+            try {
+                await sock.sendMessage(from, { delete: msg.key });
+                return true;
+            } catch (e) {}
         }
     }
 
