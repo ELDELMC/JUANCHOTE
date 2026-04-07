@@ -88,16 +88,37 @@ async function startBot(sessionName = 'auth', isMain = true) {
       const error = lastDisconnect?.error;
       botManager.removeBot(sessionName);
       const statusCode = error?.output?.statusCode;
-      const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+      
+      // Solo es un logout REAL si el código es 401 Y el error contiene "logged out" o "Stream Errored"
+      const errorMsg = error?.message || error?.output?.payload?.message || '';
+      const isRealLogout = statusCode === 401 && (
+        errorMsg.toLowerCase().includes('logged out') ||
+        errorMsg.toLowerCase().includes('stream errored') ||
+        error?.output?.payload?.error === 'Conflict'
+      );
 
-      if (isLoggedOut) {
-        console.log(`🚫 La sesión [${sessionName}] ha vencido.`);
-        try {
-          const sessionPath = path.join(__dirname, sessionName);
-          if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
-        } catch (e) {}
-        setTimeout(() => startBot(sessionName, isMain), 1000);
+      if (isRealLogout) {
+        // Usamos un contador para evitar borrar auth por una desconexión temporal
+        if (!global._logoutCounter) global._logoutCounter = {};
+        global._logoutCounter[sessionName] = (global._logoutCounter[sessionName] || 0) + 1;
+        
+        if (global._logoutCounter[sessionName] >= 2) {
+          // Dos desconexiones seguidas con 401 = logout real
+          console.log(`🚫 [LOGOUT CONFIRMADO] Sesión ${sessionName} eliminada. Escaneá el nuevo QR.`);
+          try {
+            const sessionPath = path.join(__dirname, sessionName);
+            if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
+          } catch (e) {}
+          global._logoutCounter[sessionName] = 0;
+          setTimeout(() => startBot(sessionName, isMain), 2000);
+        } else {
+          console.log(`⚠️ [RECONEXIÓN] Sesión ${sessionName} desconectada (401). Reintentando antes de borrar...`);
+          setTimeout(() => startBot(sessionName, isMain), 5000);
+        }
       } else {
+        // Desconexión temporal (wifi, servidor, etc) — reconectar sin borrar nada
+        if (global._logoutCounter) global._logoutCounter[sessionName] = 0;
+        console.log(`🔄 Reconectando ${sessionName} (código: ${statusCode || 'desconocido'})...`);
         setTimeout(() => startBot(sessionName, isMain), 3000);
       }
     }
